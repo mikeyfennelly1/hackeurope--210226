@@ -42,6 +42,7 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
 
     const def: NodeDefinition = {
       name: node.id,
+      label: node.label,
       role,
       ...(subscribesTo && subscribesTo.length > 0 ? { subscribesTo } : {}),
       ...(node.action ? { action: node.action } : {}),

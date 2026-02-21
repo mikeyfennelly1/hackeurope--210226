@@ -23,6 +23,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
   for (const node of blueprint.nodes) {
     nodes.set(node.name, {
       name: node.name,
+      label: node.label,
       role: node.role,
       status: "waiting",
       output: null,

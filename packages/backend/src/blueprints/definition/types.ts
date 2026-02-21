@@ -9,6 +9,7 @@ export interface NodeAction {
 
 export interface NodeDefinition {
   readonly name: string;
+  readonly label?: string;
   readonly role: NodeRole;
   readonly subscribesTo?: readonly string[];
   /** Required for decision nodes. Declares the market action to execute. */

@@ -10,6 +10,7 @@ export type RedprintStatus = "running" | "completed" | "error";
 
 export interface NodeState {
   readonly name: string;
+  readonly label: string | undefined;
   readonly role: NodeRole;
   status: NodeStatus;
   output: unknown;
@@ -40,6 +41,7 @@ export function redprintToJSON(rp: Redprint): RedprintJSON {
   const nodes: Record<string, Omit<NodeState, "name">> = {};
   for (const [name, state] of rp.nodes) {
     nodes[name] = {
+      label: state.label,
       role: state.role,
       status: state.status,
       output: state.output,

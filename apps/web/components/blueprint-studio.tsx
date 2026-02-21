@@ -63,6 +63,7 @@ type FlowNodeData = {
 
 type RedprintNodeState = {
   name: string;
+  label?: string;
   role: string;
   status: string;
   firedAt?: string;
@@ -81,7 +82,7 @@ type ApiRedprintResponse = {
   id: string;
   blueprintName: string;
   status: string;
-  nodes: Record<string, { role: string; status: string; output: unknown; firedAt: string | null }>;
+  nodes: Record<string, { label?: string; role: string; status: string; output: unknown; firedAt: string | null }>;
   decision: { verb: string; market_id: string } | null;
   createdAt: string;
 };
@@ -93,6 +94,7 @@ function apiResponseToRedprint(raw: ApiRedprintResponse): RedprintJSON {
     status: raw.status,
     nodes: Object.entries(raw.nodes).map(([name, state]) => ({
       name,
+      label: state.label,
       role: state.role,
       status: state.status,
       firedAt: state.firedAt ?? undefined,
@@ -1305,7 +1307,7 @@ function BlueprintStudioInner() {
                 className="flex items-center justify-between border border-white/10 bg-[#161a19] px-3 py-2"
               >
                 <div>
-                  <p className="text-xs text-[#e0e5e2]">{node.name}</p>
+                  <p className="text-xs text-[#e0e5e2]">{node.label ?? node.name}</p>
                   <p className="text-[10px] text-[#5c635e]">
                     {node.role} &middot; {node.status}
                   </p>
