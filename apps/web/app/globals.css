@@ -135,3 +135,20 @@
   color: #c8ccc9;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
+
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  background: #5a7a6a;
+  border: 2px solid #0d0f0f;
+}
+.react-flow__handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}

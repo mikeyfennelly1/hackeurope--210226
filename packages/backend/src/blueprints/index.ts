@@ -29,11 +29,12 @@ export type Blueprint = {
 };
 
 export type ValidationErrorCode =
-  | "TOPIC_WITHOUT_CONSUMER"
-  | "INVALID_NODE_REFERENCE"
-  | "INVALID_HANDLE_REFERENCE"
-  | "CYCLE_DETECTED"
-  | "MISSING_TERMINAL_DECISION";
+  | "Unconsumed topic"
+  | "Invalid node reference"
+  | "Invalid handle reference"
+  | "Cycle detected"
+  | "Missing terminal output"
+  | "Disconnected output";
 
 export type ValidationError = {
   code: ValidationErrorCode;
@@ -121,7 +122,7 @@ function validateNodeReferences(blueprint: Blueprint): ValidationError[] {
 
     if (!source || !target) {
       errors.push({
-        code: "INVALID_NODE_REFERENCE",
+        code: "Invalid node reference",
         message: `Edge '${edge.id}' references nodes that do not exist`,
         edgeId: edge.id,
       });
@@ -130,7 +131,7 @@ function validateNodeReferences(blueprint: Blueprint): ValidationError[] {
 
     if (edge.sourceHandle && !source.outputs.includes(edge.sourceHandle)) {
       errors.push({
-        code: "INVALID_HANDLE_REFERENCE",
+        code: "Invalid handle reference",
         message: `Edge '${edge.id}' references missing source handle '${edge.sourceHandle}'`,
         edgeId: edge.id,
       });
@@ -138,7 +139,7 @@ function validateNodeReferences(blueprint: Blueprint): ValidationError[] {
 
     if (edge.targetHandle && !target.inputs.includes(edge.targetHandle)) {
       errors.push({
-        code: "INVALID_HANDLE_REFERENCE",
+        code: "Invalid handle reference",
         message: `Edge '${edge.id}' references missing target handle '${edge.targetHandle}'`,
         edgeId: edge.id,
       });
@@ -163,7 +164,7 @@ function validateTopicsHaveConsumers(blueprint: Blueprint): ValidationError[] {
       const isTopic = topic.startsWith("topic.");
       if (isTopic && !allInputs.has(topic)) {
         errors.push({
-          code: "TOPIC_WITHOUT_CONSUMER",
+          code: "Unconsumed topic",
           message: `Topic '${topic}' has no consumers`,
           nodeId: node.id,
         });
@@ -219,7 +220,7 @@ function hasCycle(blueprint: Blueprint): boolean {
   return visitedCount !== blueprint.nodes.length;
 }
 
-function hasTerminalDecisionNode(blueprint: Blueprint): boolean {
+function hasTerminalOutputNode(blueprint: Blueprint): boolean {
   const outDegree = new Map<string, number>();
   for (const node of blueprint.nodes) {
     outDegree.set(node.id, 0);
@@ -230,8 +231,25 @@ function hasTerminalDecisionNode(blueprint: Blueprint): boolean {
   }
 
   return blueprint.nodes.some(
-    (node) => node.type === "decision" && (outDegree.get(node.id) ?? 0) === 0,
+    (node) => node.type === "output" && (outDegree.get(node.id) ?? 0) === 0,
   );
+}
+
+function validateOutputsConnected(blueprint: Blueprint): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const connectedTargets = new Set(blueprint.edges.map((edge) => edge.target));
+
+  for (const node of blueprint.nodes) {
+    if (node.type === "output" && !connectedTargets.has(node.id)) {
+      errors.push({
+        code: "Disconnected output",
+        message: `Output node '${node.label}' has no incoming connections`,
+        nodeId: node.id,
+      });
+    }
+  }
+
+  return errors;
 }
 
 export const BlueprintUtils = {
@@ -240,18 +258,19 @@ export const BlueprintUtils = {
 
     errors.push(...validateNodeReferences(blueprint));
     errors.push(...validateTopicsHaveConsumers(blueprint));
+    errors.push(...validateOutputsConnected(blueprint));
 
     if (hasCycle(blueprint)) {
       errors.push({
-        code: "CYCLE_DETECTED",
+        code: "Cycle detected",
         message: "Blueprint graph contains a cycle",
       });
     }
 
-    if (!hasTerminalDecisionNode(blueprint)) {
+    if (!hasTerminalOutputNode(blueprint)) {
       errors.push({
-        code: "MISSING_TERMINAL_DECISION",
-        message: "Blueprint must include a terminal decision node",
+        code: "Missing terminal output",
+        message: "Blueprint must include a terminal output node",
       });
     }
 
