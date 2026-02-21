@@ -1,4 +1,4 @@
-import type { BlueprintDefinition } from "./types";
+import type { BlueprintDefinition } from "./types.js";
 
 export function toNatsSubject(blueprintName: string, nodeName: string): string {
   return `${blueprintName}.${nodeName}`;

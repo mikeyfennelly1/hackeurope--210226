@@ -13,7 +13,8 @@
   "dependencies": {
     "@repo/backend": "workspace:*",
     "convex": "^1.32.0",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "nats": "^2.29.1"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",

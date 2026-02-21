@@ -1,12 +1,13 @@
 export type {
   NodeRole,
   Decision,
+  NodeAction,
   NodeDefinition,
   BlueprintDefinition,
   ValidationError,
   ValidationResult,
-} from "./types";
+} from "./types.js";
 
-export { BlueprintUtils } from "./validate";
-export { BlueprintBuilder } from "./builder";
-export { toNatsSubject, resolveSubjects } from "./subject";
+export { BlueprintUtils } from "./validate.js";
+export { BlueprintBuilder } from "./builder.js";
+export { toNatsSubject, resolveSubjects } from "./subject.js";
