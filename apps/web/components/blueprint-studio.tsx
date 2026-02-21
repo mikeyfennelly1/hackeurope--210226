@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyEdgeChanges,
   applyNodeChanges,
@@ -351,7 +351,7 @@ function FloatingNodeToolbar({
   onDelete: () => void;
 }) {
   const { flowToScreenPosition, getNode } = useReactFlow();
-  useViewport(); // subscribe to viewport changes so toolbar follows node
+  const { zoom } = useViewport();
 
   const internalNode = getNode(node.id);
   const nodeWidth = internalNode?.measured?.width ?? 200;
@@ -367,7 +367,8 @@ function FloatingNodeToolbar({
       style={{
         left: screenPos.x,
         top: screenPos.y,
-        transform: "translate(-50%, -100%)",
+        transform: `translate(-50%, -100%) scale(${zoom})`,
+        transformOrigin: "center bottom",
         paddingBottom: 8,
       }}
     >
@@ -498,7 +499,7 @@ function CanvasContextMenu({
             {showAddSub && (
               <div
                 className={menuClass}
-                style={{ position: "absolute", left: "100%", top: 0 }}
+                style={{ position: "absolute", left: "100%", top: -5 }}
               >
                 <button
                   className={itemClass}
@@ -566,6 +567,11 @@ function BlueprintStudioInner() {
   const updateNodeInternals = useUpdateNodeInternals();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
+
   const selectedBlueprint = useMemo(
     () => blueprints.find((item) => item.id === selectedBlueprintId) ?? null,
     [blueprints, selectedBlueprintId],
@@ -631,22 +637,30 @@ function BlueprintStudioInner() {
     [selectedBlueprint],
   );
 
+  const persistRef = useRef(persistCurrent);
+  persistRef.current = persistCurrent;
+
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<FlowNodeData, FlowNodeType>>[]) => {
-      const next = applyNodeChanges(changes, nodes);
+      const next = applyNodeChanges(changes, nodesRef.current);
       setNodes(next);
-      persistCurrent(next, edges);
+      nodesRef.current = next;
+      const hasDataChange = changes.some((c) => c.type !== "select");
+      if (hasDataChange) {
+        persistRef.current(next, edgesRef.current);
+      }
     },
-    [edges, nodes, persistCurrent],
+    [],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<Edge>[]) => {
-      const next = applyEdgeChanges(changes, edges);
+      const next = applyEdgeChanges(changes, edgesRef.current);
       setEdges(next);
-      persistCurrent(nodes, next);
+      edgesRef.current = next;
+      persistRef.current(nodesRef.current, next);
     },
-    [edges, nodes, persistCurrent],
+    [],
   );
 
   const dispatchBlueprint = async () => {
@@ -778,7 +792,7 @@ function BlueprintStudioInner() {
         return;
       }
 
-      const sourceNode = nodes.find((node) => node.id === connection.source);
+      const sourceNode = nodesRef.current.find((node) => node.id === connection.source);
       if (sourceNode?.type === "decisionNode" && !connection.sourceHandle) {
         return;
       }
@@ -791,12 +805,13 @@ function BlueprintStudioInner() {
           targetHandle: connection.targetHandle ?? undefined,
           type: "smoothstep",
         },
-        edges,
+        edgesRef.current,
       );
       setEdges(nextEdges);
-      persistCurrent(nodes, nextEdges);
+      edgesRef.current = nextEdges;
+      persistRef.current(nodesRef.current, nextEdges);
     },
-    [edges, nodes, persistCurrent],
+    [],
   );
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
@@ -1038,6 +1053,7 @@ function BlueprintStudioInner() {
                 nodeId: node.id,
               });
             }}
+            onMoveStart={() => setContextMenu(null)}
             panOnScroll
             zoomOnScroll={false}
             fitView

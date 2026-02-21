@@ -2,6 +2,8 @@ import cors from "cors";
 import express from "express";
 import { connectNats } from "./redprint/nats.js";
 import { redprintRouter } from "./redprint/routes.js";
+import { polymarketRoutes } from "./routes/index.js";
+import { errorHandler } from "./middleware/index.js";
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -9,11 +11,19 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Redprint routes
 app.use("/api", redprintRouter);
 
+// Health check
 app.get("/", (_req, res) => {
   res.json({ message: "Hello from the API" });
 });
+
+// Mount Polymarket routes
+app.use("/api/polymarket", polymarketRoutes);
+
+// Global error handler (must be last)
+app.use(errorHandler);
 
 async function start() {
   await connectNats();
