@@ -1,3 +1,7 @@
+import type { Decision } from "./definition/types";
+export type { Decision } from "./definition/types";
+export { toDefinition } from "./convert";
+
 export type BlueprintNodeType = "input" | "output" | "decision";
 
 export type BlueprintNode = {
@@ -10,6 +14,7 @@ export type BlueprintNode = {
   };
   inputs: string[];
   outputs: string[];
+  action?: { verb: Decision; market_id: string };
 };
 
 export type BlueprintEdge = {
@@ -34,7 +39,8 @@ export type ValidationErrorCode =
   | "Invalid handle reference"
   | "Cycle detected"
   | "Missing terminal output"
-  | "Disconnected output";
+  | "Disconnected output"
+  | "Decision missing action";
 
 export type ValidationError = {
   code: ValidationErrorCode;
@@ -272,6 +278,16 @@ export const BlueprintUtils = {
         code: "Missing terminal output",
         message: "Blueprint must include a terminal output node",
       });
+    }
+
+    for (const node of blueprint.nodes) {
+      if (node.type === "decision" && (!node.action?.verb || !node.action?.market_id)) {
+        errors.push({
+          code: "Decision missing action",
+          message: `Decision node '${node.label}' must have an action with verb and market_id`,
+          nodeId: node.id,
+        });
+      }
     }
 
     return {

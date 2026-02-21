@@ -25,15 +25,21 @@ import {
 import {
   BlueprintBuilder,
   BlueprintUtils,
+  toDefinition,
   type Blueprint,
+  type Decision,
 } from "@repo/backend/blueprints";
 import {
   AlertCircle,
   CheckCircle2,
   ChevronRight,
   GitBranch,
+  Loader2,
+  Play,
   Plus,
+  Square,
   Trash2,
+  Zap,
 } from "lucide-react";
 
 import "@xyflow/react/dist/style.css";
@@ -42,6 +48,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const STORAGE_KEY = "blueprints:v1";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 type FlowNodeType = "inputNode" | "outputNode" | "decisionNode";
 
@@ -49,8 +56,50 @@ type FlowNodeData = {
   label: string;
   inputs: string[];
   outputs: string[];
+  action?: { verb: Decision; market_id: string };
   hasError?: boolean;
 };
+
+type RedprintNodeState = {
+  name: string;
+  role: string;
+  status: string;
+  firedAt?: string;
+};
+
+type RedprintJSON = {
+  id: string;
+  name: string;
+  status: string;
+  nodes: RedprintNodeState[];
+  decision?: { verb: string; market_id: string } | null;
+  createdAt: string;
+};
+
+type ApiRedprintResponse = {
+  id: string;
+  blueprintName: string;
+  status: string;
+  nodes: Record<string, { role: string; status: string; output: unknown; firedAt: string | null }>;
+  decision: { verb: string; market_id: string } | null;
+  createdAt: string;
+};
+
+function apiResponseToRedprint(raw: ApiRedprintResponse): RedprintJSON {
+  return {
+    id: raw.id,
+    name: raw.blueprintName,
+    status: raw.status,
+    nodes: Object.entries(raw.nodes).map(([name, state]) => ({
+      name,
+      role: state.role,
+      status: state.status,
+      firedAt: state.firedAt ?? undefined,
+    })),
+    decision: raw.decision,
+    createdAt: raw.createdAt,
+  };
+}
 
 type BlueprintError = ReturnType<
   typeof BlueprintUtils.validate
@@ -77,6 +126,7 @@ function createStarterBlueprint(name: string): Blueprint {
       position: { x: 400, y: 220 },
       inputs: ["topic.orders"],
       outputs: ["approved", "rejected"],
+      action: { verb: "buy", market_id: "" },
     })
     .addNode({
       id: "output-1",
@@ -120,6 +170,7 @@ function blueprintToFlow(blueprint: Blueprint): {
         label: node.label,
         inputs: [...node.inputs],
         outputs: [...node.outputs],
+        action: node.action,
       },
     })),
     edges: blueprint.edges.map((edge) => ({
@@ -148,6 +199,7 @@ function flowToBlueprint(
       position: node.position,
       inputs: [...node.data.inputs],
       outputs: [...node.data.outputs],
+      ...(node.data.action ? { action: node.data.action } : {}),
     })),
     edges: edges.map((edge) => ({
       id: edge.id,
@@ -371,6 +423,38 @@ function FloatingNodeToolbar({
           <Trash2 className="size-3.5" />
         </button>
       </div>
+      {node.type === "decisionNode" && (
+        <div className="mt-1 flex items-center gap-1.5 border border-white/10 bg-[#161a19] px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+          <select
+            className="h-6 rounded border border-white/10 bg-[#1a1f1d] px-1.5 text-[11px] text-[#c8ccc9]"
+            value={node.data.action?.verb ?? "buy"}
+            onChange={(e) =>
+              onUpdate({
+                action: {
+                  verb: e.target.value as Decision,
+                  market_id: node.data.action?.market_id ?? "",
+                },
+              })
+            }
+          >
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
+          </select>
+          <Input
+            className="h-6 w-36 text-[11px]"
+            value={node.data.action?.market_id ?? ""}
+            onChange={(e) =>
+              onUpdate({
+                action: {
+                  verb: node.data.action?.verb ?? "buy",
+                  market_id: e.target.value,
+                },
+              })
+            }
+            placeholder="Market ID"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -477,6 +561,8 @@ function BlueprintStudioInner() {
   const [status, setStatus] = useState<"saved" | "invalid">("saved");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [activeRedprint, setActiveRedprint] = useState<RedprintJSON | null>(null);
+  const [dispatching, setDispatching] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
@@ -562,6 +648,72 @@ function BlueprintStudioInner() {
     },
     [edges, nodes, persistCurrent],
   );
+
+  const dispatchBlueprint = async () => {
+    if (!selectedBlueprint || status !== "saved") return;
+    setDispatching(true);
+    try {
+      const definition = toDefinition(selectedBlueprint);
+      const res = await fetch(`${API_URL}/api/redprints`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(definition),
+      });
+      if (!res.ok) throw new Error(`Dispatch failed: ${res.status}`);
+      const raw = (await res.json()) as ApiRedprintResponse;
+      setActiveRedprint(apiResponseToRedprint(raw));
+    } catch (err) {
+      console.error("Dispatch error:", err);
+    } finally {
+      setDispatching(false);
+    }
+  };
+
+  const pushEvent = async (nodeName: string) => {
+    if (!activeRedprint) return;
+    try {
+      await fetch(
+        `${API_URL}/api/redprints/${activeRedprint.id}/nodes/${nodeName}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ output: true }),
+        },
+      );
+    } catch (err) {
+      console.error("Push event error:", err);
+    }
+  };
+
+  const teardownRedprint = async () => {
+    if (!activeRedprint) return;
+    try {
+      await fetch(`${API_URL}/api/redprints/${activeRedprint.id}`, {
+        method: "DELETE",
+      });
+      setActiveRedprint(null);
+    } catch (err) {
+      console.error("Teardown error:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeRedprint || activeRedprint.status !== "running") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `${API_URL}/api/redprints/${activeRedprint.id}`,
+        );
+        if (res.ok) {
+          const raw = (await res.json()) as ApiRedprintResponse;
+          setActiveRedprint(apiResponseToRedprint(raw));
+        }
+      } catch {
+        /* ignore polling errors */
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeRedprint?.id, activeRedprint?.status]);
 
   const addNodeByType = (type: FlowNodeType, atPosition?: { x: number; y: number }) => {
     let position: { x: number; y: number };
@@ -796,6 +948,19 @@ function BlueprintStudioInner() {
                 </>
               )}
             </div>
+            <Button
+              className="mt-3 w-full"
+              variant="default"
+              disabled={status !== "saved" || dispatching}
+              onClick={dispatchBlueprint}
+            >
+              {dispatching ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Play className="size-4" />
+              )}
+              {dispatching ? "Dispatching..." : "Dispatch"}
+            </Button>
           </div>
         ) : null}
 
@@ -898,6 +1063,80 @@ function BlueprintStudioInner() {
           )}
         </div>
       </main>
+
+      {activeRedprint && (
+        <aside className="relative z-10 w-[300px] border-l border-white/10 bg-[#0d0f0f]/95 p-4 overflow-y-auto">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs uppercase tracking-[0.18em] text-[#5c635e]">
+              Redprint
+            </p>
+            <span
+              className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
+                activeRedprint.status === "running"
+                  ? "bg-[#5a7a6a]/20 text-[#5a7a6a]"
+                  : activeRedprint.status === "completed"
+                    ? "bg-[#437c6e]/20 text-[#437c6e]"
+                    : "bg-[#c45c5c]/20 text-[#c45c5c]"
+              }`}
+            >
+              {activeRedprint.status}
+            </span>
+          </div>
+
+          <p className="mb-3 text-sm text-[#e0e5e2]">{activeRedprint.name}</p>
+
+          <div className="space-y-2">
+            {activeRedprint.nodes.map((node) => (
+              <div
+                key={node.name}
+                className="flex items-center justify-between border border-white/10 bg-[#161a19] px-3 py-2"
+              >
+                <div>
+                  <p className="text-xs text-[#e0e5e2]">{node.name}</p>
+                  <p className="text-[10px] text-[#5c635e]">
+                    {node.role} &middot; {node.status}
+                  </p>
+                  {node.firedAt && (
+                    <p className="text-[10px] text-[#8a918c]">
+                      {new Date(node.firedAt).toLocaleTimeString()}
+                    </p>
+                  )}
+                </div>
+                {node.role === "producer" &&
+                  activeRedprint.status === "running" && (
+                    <button
+                      className="rounded border border-white/10 px-2 py-1 text-[10px] text-[#5a7a6a] hover:bg-white/5"
+                      onClick={() => pushEvent(node.name)}
+                    >
+                      <Zap className="inline size-3" /> Push
+                    </button>
+                  )}
+              </div>
+            ))}
+          </div>
+
+          {activeRedprint.decision && (
+            <div className="mt-3 border border-[#437c6e]/30 bg-[#437c6e]/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-[#437c6e]">
+                Decision Result
+              </p>
+              <p className="text-sm font-semibold text-[#e0e5e2]">
+                {activeRedprint.decision.verb} on{" "}
+                {activeRedprint.decision.market_id}
+              </p>
+            </div>
+          )}
+
+          <Button
+            className="mt-4 w-full"
+            variant="outline"
+            onClick={teardownRedprint}
+          >
+            <Square className="size-4" />
+            Teardown
+          </Button>
+        </aside>
+      )}
     </div>
   );
 }

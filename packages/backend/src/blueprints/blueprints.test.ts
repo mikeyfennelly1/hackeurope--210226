@@ -18,6 +18,7 @@ function validBlueprint(): Blueprint {
       position: { x: 300, y: 0 },
       outputs: ["approved", "rejected"],
       inputs: ["topic.orders"],
+      action: { verb: "buy", market_id: "TEST-MARKET" },
     })
     .addNode({
       id: "output-1",
