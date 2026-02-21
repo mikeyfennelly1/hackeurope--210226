@@ -7,7 +7,6 @@ import {
   addEdge,
   Background,
   ConnectionLineType,
-  Controls,
   type Connection,
   type EdgeChange,
   type Edge,
@@ -16,6 +15,7 @@ import {
   type Node,
   type NodeProps,
   type OnConnectEnd,
+  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -33,10 +33,12 @@ import {
 import {
   AlertCircle,
   CheckCircle2,
-  ChevronRight,
+  ChevronDown,
+  Ellipsis,
   GitBranch,
   Loader2,
   MessageCircle,
+  Pencil,
   Play,
   Plus,
   Square,
@@ -46,7 +48,27 @@ import {
 
 import "@xyflow/react/dist/style.css";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { BlueprintChat } from "@/components/blueprint-chat";
 import { computeLayout, GRID_SIZE } from "@/lib/auto-layout";
@@ -497,11 +519,17 @@ const ALL_NODE_OPTIONS: { type: FlowNodeType; label: string; icon: React.ReactNo
   { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#8a918c]" />, hasTarget: true, hasSource: false },
 ];
 
-const ITEM_CLASS =
-  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-[#c8ccc9] hover:bg-white/5 transition-colors";
+const DROPDOWN_CONTENT_CLASS =
+  "rounded-md border-white/10 bg-[#161a19] shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
 
-const MENU_CLASS =
-  "fixed z-50 min-w-[140px] border border-white/10 bg-[#161a19] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
+const DROPDOWN_ITEM_CLASS =
+  "text-[#c8ccc9] focus:bg-white/5 focus:text-[#c8ccc9] data-[highlighted]:bg-white/5 data-[highlighted]:text-[#c8ccc9]";
+
+const DROPDOWN_SUBTRIGGER_CLASS =
+  "text-[#c8ccc9] focus:bg-white/5 focus:text-[#c8ccc9] data-[state=open]:bg-white/5 data-[state=open]:text-[#c8ccc9] data-[highlighted]:bg-white/5 data-[highlighted]:text-[#c8ccc9]";
+
+const DROPDOWN_ITEM_DESTRUCTIVE_CLASS =
+  "text-[#c45c5c] focus:bg-[#c45c5c]/10 focus:text-[#c45c5c] data-[highlighted]:bg-[#c45c5c]/10 data-[highlighted]:text-[#c45c5c]";
 
 function ConnectionNodePicker({
   menu,
@@ -532,18 +560,24 @@ function ConnectionNodePicker({
   );
 
   return (
-    <div onMouseDown={(e) => e.stopPropagation()}>
-      <div
-        className={MENU_CLASS}
-        style={{ left: screenPos.x, top: screenPos.y }}
+    <DropdownMenu open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DropdownMenuTrigger asChild>
+        <div
+          className="fixed size-0"
+          style={{ left: screenPos.x, top: screenPos.y }}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        sideOffset={0}
+        className={`min-w-[120px] ${DROPDOWN_CONTENT_CLASS}`}
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[#5c635e]">
-          Add Node
-        </div>
         {options.map((opt) => (
-          <button
+          <DropdownMenuItem
             key={opt.type}
-            className={ITEM_CLASS}
+            className={DROPDOWN_ITEM_CLASS}
             onClick={() => {
               onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom);
               onClose();
@@ -551,10 +585,10 @@ function ConnectionNodePicker({
           >
             {opt.icon}
             {opt.label}
-          </button>
+          </DropdownMenuItem>
         ))}
-      </div>
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -572,63 +606,61 @@ function CanvasContextMenu({
   onDeleteNode: (nodeId: string) => void;
   onClose: () => void;
 }) {
-  const [showAddSub, setShowAddSub] = useState(false);
-
-  const nodeItems = (position: { x: number; y: number }) =>
-    ALL_NODE_OPTIONS.map((opt) => (
-      <button
-        key={opt.type}
-        className={ITEM_CLASS}
-        onClick={() => {
-          onAddNode(opt.type, position);
-          onClose();
-        }}
-      >
-        {opt.icon}
-        {opt.label}
-      </button>
-    ));
-
   return (
-    <div onMouseDown={(e) => e.stopPropagation()}>
-      <div
-        className={MENU_CLASS}
-        style={{ left: menu.screenX, top: menu.screenY }}
+    <DropdownMenu open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DropdownMenuTrigger asChild>
+        <div
+          className="fixed size-0"
+          style={{ left: menu.screenX, top: menu.screenY }}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        sideOffset={0}
+        className={`min-w-[140px] ${DROPDOWN_CONTENT_CLASS}`}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         {menu.type === "pane" ? (
-          <div
-            className="relative"
-            onMouseEnter={() => setShowAddSub(true)}
-            onMouseLeave={() => setShowAddSub(false)}
-          >
-            <button className={ITEM_CLASS}>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className={DROPDOWN_SUBTRIGGER_CLASS}>
               <Plus className="size-3 text-[#8a918c]" />
-              <span className="flex-1">Add node</span>
-              <ChevronRight className="size-3 text-[#5c635e]" />
-            </button>
-            {showAddSub && (
-              <div
-                className={MENU_CLASS}
-                style={{ position: "absolute", left: "100%", top: -5 }}
-              >
-                {nodeItems({ x: menu.flowX, y: menu.flowY })}
-              </div>
-            )}
-          </div>
+              Add node
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent
+              sideOffset={6}
+              alignOffset={-4}
+              className={`min-w-[120px] ${DROPDOWN_CONTENT_CLASS}`}
+            >
+              {ALL_NODE_OPTIONS.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.type}
+                  className={DROPDOWN_ITEM_CLASS}
+                  onClick={() => {
+                    onAddNode(opt.type, { x: menu.flowX, y: menu.flowY });
+                    onClose();
+                  }}
+                >
+                  {opt.icon}
+                  {opt.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         ) : (
-          <button
-            className={ITEM_CLASS}
+          <DropdownMenuItem
+            className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
             onClick={() => {
               onDeleteNode(menu.nodeId);
               onClose();
             }}
           >
-            <Trash2 className="size-3 text-[#8a918c]" />
+            <Trash2 className="size-3" />
             Delete node
-          </button>
+          </DropdownMenuItem>
         )}
-      </div>
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -646,6 +678,8 @@ function BlueprintStudioInner() {
   const [activeRedprint, setActiveRedprint] = useState<RedprintJSON | null>(null);
   const [dispatching, setDispatching] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [deletingBlueprintId, setDeletingBlueprintId] = useState<string | null>(null);
+  const [renamingBlueprintId, setRenamingBlueprintId] = useState<string | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
@@ -904,9 +938,6 @@ function BlueprintStudioInner() {
     }
 
     persistCurrent(nextNodes, nextEdges);
-    requestAnimationFrame(() => {
-      fitView({ duration: 260, padding: 0.24 });
-    });
   };
 
   const onConnect = useCallback(
@@ -1024,14 +1055,15 @@ function BlueprintStudioInner() {
     [blueprints, fitView],
   );
 
-  const deleteBlueprint = (id: string) => {
-    if (blueprints.length === 1) return;
-    const next = blueprints.filter((blueprint) => blueprint.id !== id);
+  const confirmDeleteBlueprint = () => {
+    if (!deletingBlueprintId) return;
+    const next = blueprints.filter((blueprint) => blueprint.id !== deletingBlueprintId);
     setBlueprints(next);
-    if (selectedBlueprintId === id) {
+    if (selectedBlueprintId === deletingBlueprintId) {
       setSelectedBlueprintId(next[0]?.id ?? "");
     }
     saveBlueprints(next);
+    setDeletingBlueprintId(null);
   };
 
   const renameBlueprint = (name: string) => {
@@ -1096,142 +1128,97 @@ function BlueprintStudioInner() {
   return (
     <div className="relative flex min-h-screen bg-[#0d0f0f] text-[#c8ccc9]">
       <div className="ambient-glow" />
-      <aside className="relative z-10 w-[300px] border-r border-white/10 bg-[#0d0f0f]/95 p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-[#5c635e]">
-              Blueprints
-            </p>
-            <h1 className="text-lg font-semibold text-[#e0e5e2]">
-              Blueprint Studio
-            </h1>
-          </div>
-          <Button size="sm" variant="outline" onClick={createBlueprint}>
-            <Plus className="size-4" />
-            Add
+      <aside className="relative z-10 flex w-[260px] flex-col border-r border-white/10 bg-[#0d0f0f]/95">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 pb-2 pt-4">
+          <h1 className="text-base font-semibold text-[#e0e5e2]">
+            Blueprint Studio
+          </h1>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0 text-[#8a918c] hover:text-[#e0e5e2]"
+            disabled={!selectedBlueprint || status !== "saved" || dispatching}
+            onClick={dispatchBlueprint}
+          >
+            {dispatching ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Play className="size-4" />
+            )}
           </Button>
         </div>
 
-        <div className="space-y-2">
+        {/* New blueprint button */}
+        <button
+          onClick={createBlueprint}
+          className="mx-3 mb-1 flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-[#8a918c] transition-colors hover:bg-white/5"
+        >
+          <Plus className="size-4" />
+          New blueprint
+        </button>
+
+        {/* Blueprint list */}
+        <div className="flex-1 overflow-y-auto px-2 py-1">
           {blueprints.map((blueprint) => {
             const selected = blueprint.id === selectedBlueprintId;
             return (
-              <button
+              <div
                 key={blueprint.id}
-                onClick={() => setSelectedBlueprintId(blueprint.id)}
-                className={`flex w-full items-center justify-between border px-3 py-2 text-left text-sm transition ${
+                onClick={() => {
+                  setSelectedBlueprintId(blueprint.id);
+                }}
+                className={`group relative flex cursor-pointer items-center rounded-lg px-2 py-2 text-sm transition-colors ${
                   selected
-                    ? "border-[#5a7a6a] bg-[#1a1f1d] text-[#e0e5e2]"
-                    : "border-white/10 bg-[#161a19] text-[#8a918c] hover:border-white/20"
+                    ? "bg-white/[0.08] text-[#e0e5e2]"
+                    : "text-[#8a918c] hover:bg-white/[0.04]"
                 }`}
               >
-                <span>{blueprint.name}</span>
-                <span
-                  className="text-[#5c635e] hover:text-[#c45c5c]"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    deleteBlueprint(blueprint.id);
-                  }}
-                >
-                  <Trash2 className="size-4" />
-                </span>
-              </button>
+                <span className="flex-1 truncate">{blueprint.name}</span>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        onClick={(e) => e.stopPropagation()}
+                        className={`ml-1 shrink-0 rounded p-0.5 text-[#5c635e] opacity-0 transition-opacity hover:text-[#e0e5e2] group-hover:opacity-100 ${selected ? "opacity-100" : ""}`}
+                      >
+                        <Ellipsis className="size-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className={`w-40 ${DROPDOWN_CONTENT_CLASS}`}>
+                      <DropdownMenuItem
+                        className={DROPDOWN_ITEM_CLASS}
+                        onClick={() => {
+                          setSelectedBlueprintId(blueprint.id);
+                          setRenamingBlueprintId(blueprint.id);
+                        }}
+                      >
+                        <Pencil className="size-3 text-[#8a918c]" />
+                        Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-white/10" />
+                      <DropdownMenuItem
+                        className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
+                        onClick={() => setDeletingBlueprintId(blueprint.id)}
+                      >
+                        <Trash2 className="size-3" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             );
           })}
         </div>
 
-        {selectedBlueprint ? (
-          <div className="mt-4 border-t border-white/10 pt-4">
-            <p className="mb-1 text-xs uppercase tracking-[0.18em] text-[#5c635e]">
-              Selected Blueprint
-            </p>
-            <Input
-              value={selectedBlueprint.name}
-              onChange={(event) => renameBlueprint(event.target.value)}
-            />
-            <div className="mt-3 flex items-center gap-2 text-xs">
-              {status === "saved" ? (
-                <>
-                  <CheckCircle2 className="size-4 text-[#5a7a6a]" />
-                  <span className="text-[#8a918c]">Validated and saved</span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="size-4 text-[#c45c5c]" />
-                  <span className="text-[#c45c5c]">
-                    Invalid changes (not persisted)
-                  </span>
-                </>
-              )}
-            </div>
-            <Button
-              className="mt-3 w-full"
-              variant="default"
-              disabled={status !== "saved" || dispatching}
-              onClick={dispatchBlueprint}
-            >
-              {dispatching ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Play className="size-4" />
-              )}
-              {dispatching ? "Dispatching..." : "Dispatch"}
-            </Button>
-          </div>
-        ) : null}
-
-        <div className="mt-6 border-t border-white/10 pt-4">
-          <p className="mb-2 text-xs uppercase tracking-[0.18em] text-[#5c635e]">
-            Node Palette
-          </p>
-          <div className="grid grid-cols-1 gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("inputNode")}
-            >
-              Add Input
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("outputNode")}
-            >
-              Add Output
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("decisionNode")}
-            >
-              Add Decision
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => fitView({ duration: 260, padding: 0.24 })}
-            >
-              Recenter Graph
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const laid = computeLayout(nodes, edges);
-                setNodes(laid);
-                requestAnimationFrame(() => {
-                  fitView({ duration: 260, padding: 0.24 });
-                });
-              }}
-            >
-              Auto Layout
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-6 border-t border-white/10 pt-4">
+        <div className="mt-auto border-t border-white/10 px-3 py-3">
           <Button
             className="w-full"
-            variant={chatOpen ? "default" : "secondary"}
+            size="sm"
+            variant={chatOpen ? "default" : "outline"}
             onClick={() => setChatOpen((prev) => !prev)}
           >
             <MessageCircle className="size-4" />
-            {chatOpen ? "Close AI Chat" : "AI Blueprint Chat"}
+            {chatOpen ? "Close AI Chat" : "AI Chat"}
           </Button>
         </div>
 
@@ -1262,6 +1249,19 @@ function BlueprintStudioInner() {
               }
               setSelectedNodeId(null);
               setContextMenu(null);
+            }}
+            onDoubleClick={(event) => {
+              // Only handle double-clicks on the canvas pane, not on nodes
+              const target = event.target as HTMLElement;
+              if (target.closest(".react-flow__node")) return;
+              const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+              setContextMenu({
+                type: "pane",
+                screenX: event.clientX,
+                screenY: event.clientY,
+                flowX: flowPos.x,
+                flowY: flowPos.y,
+              });
             }}
             onPaneContextMenu={(event) => {
               event.preventDefault();
@@ -1300,8 +1300,77 @@ function BlueprintStudioInner() {
             fitView
           >
             <Background color="rgba(255,255,255,0.06)" gap={GRID_SIZE} />
-            <Controls />
+            {validationErrors.length > 0 && (
+              <Panel position="top-right">
+                <div className="space-y-1">
+                  {validationErrors.map((error, i) => (
+                    <div
+                      key={`${error.code}-${error.nodeId ?? ""}-${i}`}
+                      className="flex items-center gap-2 rounded border border-[#c45c5c]/30 bg-[#161a19] px-3 py-1.5 text-xs text-[#c45c5c]"
+                    >
+                      <AlertCircle className="size-3.5 shrink-0" />
+                      {error.message}
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            )}
           </ReactFlow>
+          {selectedBlueprint && (
+            <div className="pointer-events-none absolute left-3 top-3 z-10">
+              <div className="pointer-events-auto flex items-center rounded-full bg-[#2a2e2c] shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
+                {renamingBlueprintId === selectedBlueprint.id ? (
+                  <Input
+                    ref={(el) => el?.focus()}
+                    className="h-9 w-56 rounded-full border-none bg-transparent px-4 text-sm text-[#e0e5e2] shadow-none focus-visible:ring-0"
+                    value={selectedBlueprint.name}
+                    onChange={(e) => renameBlueprint(e.target.value)}
+                    onBlur={() => {
+                      requestAnimationFrame(() => setRenamingBlueprintId(null));
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") setRenamingBlueprintId(null);
+                    }}
+                  />
+                ) : (
+                  <button
+                    className="cursor-text py-2 pl-4 pr-1 text-sm font-medium text-[#e0e5e2]"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setRenamingBlueprintId(selectedBlueprint.id);
+                    }}
+                  >
+                    {selectedBlueprint.name}
+                  </button>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center justify-center rounded-full p-2 text-[#8a918c] transition-colors hover:text-[#e0e5e2]">
+                      <ChevronDown className="size-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className={`w-40 ${DROPDOWN_CONTENT_CLASS}`}>
+                    <DropdownMenuItem
+                      className={DROPDOWN_ITEM_CLASS}
+                      onClick={() => setRenamingBlueprintId(selectedBlueprint.id)}
+                    >
+                      <Pencil className="size-3 text-[#8a918c]" />
+                      Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-white/10" />
+                    <DropdownMenuItem
+                      className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
+                      onClick={() => setDeletingBlueprintId(selectedBlueprint.id)}
+                    >
+                      <Trash2 className="size-3" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          )}
           {selectedNode && (
             <FloatingNodeToolbar
               node={selectedNode}
@@ -1408,6 +1477,26 @@ function BlueprintStudioInner() {
         onClose={() => setChatOpen(false)}
         onBlueprintGenerated={handleBlueprintFromChat}
       />
+
+      <AlertDialog
+        open={!!deletingBlueprintId}
+        onOpenChange={(open) => { if (!open) setDeletingBlueprintId(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete blueprint?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the blueprint.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteBlueprint}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
