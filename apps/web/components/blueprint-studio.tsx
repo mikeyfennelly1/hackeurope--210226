@@ -23,14 +23,20 @@ import {
 import {
   BlueprintBuilder,
   BlueprintUtils,
+  toDefinition,
   type Blueprint,
+  type Decision,
 } from "@repo/backend/blueprints";
 import {
   AlertCircle,
   CheckCircle2,
   GitBranch,
+  Loader2,
+  Play,
   Plus,
+  Square,
   Trash2,
+  Zap,
 } from "lucide-react";
 
 import "@xyflow/react/dist/style.css";
@@ -53,6 +59,26 @@ type FlowNodeData = {
   label: string;
   inputs: string[];
   outputs: string[];
+  action?: { verb: Decision; market_id: string };
+};
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+type RedprintNodeState = {
+  role: string;
+  status: "waiting" | "fired";
+  output: unknown;
+  firedAt: string | null;
+};
+
+type RedprintJSON = {
+  id: string;
+  blueprintName: string;
+  status: "running" | "completed" | "error";
+  nodes: Record<string, RedprintNodeState>;
+  decision: Decision | null;
+  createdAt: string;
 };
 
 type BlueprintError = ReturnType<
@@ -84,6 +110,7 @@ function createStarterBlueprint(name: string): Blueprint {
       position: { x: 780, y: 240 },
       inputs: ["topic.orders"],
       outputs: ["approved", "rejected"],
+      action: { verb: "buy", market_id: "" },
     })
     .addEdge({ id: "edge-1", source: "input-1", target: "output-1" })
     .addEdge({ id: "edge-2", source: "output-1", target: "decision-1" })
@@ -119,6 +146,7 @@ function blueprintToFlow(blueprint: Blueprint): {
         label: node.label,
         inputs: [...node.inputs],
         outputs: [...node.outputs],
+        action: node.action,
       },
     })),
     edges: blueprint.edges.map((edge) => ({
@@ -147,6 +175,7 @@ function flowToBlueprint(
       position: node.position,
       inputs: [...node.data.inputs],
       outputs: [...node.data.outputs],
+      ...(node.data.action ? { action: node.data.action } : {}),
     })),
     edges: edges.map((edge) => ({
       id: edge.id,
@@ -295,6 +324,10 @@ function BlueprintStudioInner() {
   );
   const [status, setStatus] = useState<"saved" | "invalid">("saved");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [activeRedprint, setActiveRedprint] = useState<RedprintJSON | null>(
+    null,
+  );
+  const [dispatching, setDispatching] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
@@ -502,6 +535,81 @@ function BlueprintStudioInner() {
     saveBlueprints(next);
   };
 
+  const dispatchBlueprint = async () => {
+    if (!selectedBlueprint || status !== "saved") return;
+    setDispatching(true);
+    try {
+      const definition = toDefinition(selectedBlueprint);
+      const res = await fetch(`${API_URL}/api/redprints`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(definition),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const rp = (await res.json()) as RedprintJSON;
+      setActiveRedprint(rp);
+    } catch (err) {
+      console.error("Dispatch failed:", err);
+    } finally {
+      setDispatching(false);
+    }
+  };
+
+  const pushEvent = async (nodeName: string) => {
+    if (!activeRedprint) return;
+    try {
+      await fetch(
+        `${API_URL}/api/redprints/${activeRedprint.id}/nodes/${nodeName}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ output: true }),
+        },
+      );
+      // Immediately poll for updated state
+      const res = await fetch(
+        `${API_URL}/api/redprints/${activeRedprint.id}`,
+      );
+      if (res.ok) {
+        setActiveRedprint((await res.json()) as RedprintJSON);
+      }
+    } catch (err) {
+      console.error("Push event failed:", err);
+    }
+  };
+
+  const teardownRedprint = async () => {
+    if (!activeRedprint) return;
+    try {
+      await fetch(`${API_URL}/api/redprints/${activeRedprint.id}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // ignore
+    }
+    setActiveRedprint(null);
+  };
+
+  // Poll redprint status while running
+  useEffect(() => {
+    if (!activeRedprint || activeRedprint.status !== "running") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `${API_URL}/api/redprints/${activeRedprint.id}`,
+        );
+        if (res.ok) {
+          const rp = (await res.json()) as RedprintJSON;
+          setActiveRedprint(rp);
+          if (rp.status !== "running") clearInterval(interval);
+        }
+      } catch {
+        // ignore
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeRedprint?.id, activeRedprint?.status]);
+
   const nodeTypes = useMemo(
     () => ({
       inputNode: InputNode,
@@ -582,6 +690,18 @@ function BlueprintStudioInner() {
                 </>
               )}
             </div>
+            <Button
+              className="mt-3 w-full"
+              disabled={status !== "saved" || dispatching}
+              onClick={dispatchBlueprint}
+            >
+              {dispatching ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Play className="size-4" />
+              )}
+              {dispatching ? "Dispatching..." : "Dispatch Redprint"}
+            </Button>
           </div>
         ) : null}
 
@@ -692,6 +812,49 @@ function BlueprintStudioInner() {
                       }
                     />
                   </div>
+                  {selectedNode.type === "decisionNode" && (
+                    <>
+                      <div className="space-y-1">
+                        <p className="text-xs uppercase tracking-[0.18em] text-[#5c635e]">
+                          Verb
+                        </p>
+                        <select
+                          value={selectedNode.data.action?.verb ?? "buy"}
+                          onChange={(event) =>
+                            updateSelectedNode({
+                              action: {
+                                verb: event.target.value as Decision,
+                                market_id:
+                                  selectedNode.data.action?.market_id ?? "",
+                              },
+                            })
+                          }
+                          className="w-full border border-white/10 bg-[#0d0f0f] px-3 py-2 text-sm text-[#e0e5e2]"
+                        >
+                          <option value="buy">Buy</option>
+                          <option value="sell">Sell</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs uppercase tracking-[0.18em] text-[#5c635e]">
+                          Market ID
+                        </p>
+                        <Input
+                          placeholder="e.g. FED-2024-DEC"
+                          value={selectedNode.data.action?.market_id ?? ""}
+                          onChange={(event) =>
+                            updateSelectedNode({
+                              action: {
+                                verb:
+                                  selectedNode.data.action?.verb ?? "buy",
+                                market_id: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </div>
+                    </>
+                  )}
                   <Button
                     variant="destructive"
                     onClick={deleteSelectedNode}
@@ -731,6 +894,88 @@ function BlueprintStudioInner() {
               )}
             </CardContent>
           </Card>
+
+          {activeRedprint && (
+            <Card className="mt-4 border-white/10 bg-[#161a19] py-4">
+              <CardHeader className="px-4">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm text-[#e0e5e2]">
+                    Redprint
+                  </CardTitle>
+                  <span
+                    className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                      activeRedprint.status === "running"
+                        ? "bg-[#5a7a6a]/20 text-[#5a7a6a]"
+                        : activeRedprint.status === "completed"
+                          ? "bg-[#4a8a5a]/20 text-[#4a8a5a]"
+                          : "bg-[#c45c5c]/20 text-[#c45c5c]"
+                    }`}
+                  >
+                    {activeRedprint.status}
+                  </span>
+                </div>
+                <CardDescription className="font-mono text-[10px] text-[#5c635e]">
+                  {activeRedprint.id}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 px-4">
+                {activeRedprint.decision && (
+                  <div className="border border-[#4a8a5a]/40 bg-[#4a8a5a]/10 p-2 text-xs">
+                    <span className="font-semibold uppercase text-[#4a8a5a]">
+                      Decision:{" "}
+                    </span>
+                    <span className="text-[#e0e5e2]">
+                      {activeRedprint.decision}
+                    </span>
+                  </div>
+                )}
+                <div className="space-y-1">
+                  {Object.entries(activeRedprint.nodes).map(
+                    ([name, nodeState]) => (
+                      <div
+                        key={name}
+                        className="flex items-center justify-between border border-white/5 px-2 py-1.5 text-xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`size-2 rounded-full ${
+                              nodeState.status === "fired"
+                                ? "bg-[#5a7a6a]"
+                                : "bg-[#5c635e]"
+                            }`}
+                          />
+                          <span className="text-[#c8ccc9]">{name}</span>
+                          <span className="text-[10px] text-[#5c635e]">
+                            {nodeState.role}
+                          </span>
+                        </div>
+                        {nodeState.role === "producer" &&
+                          nodeState.status === "waiting" &&
+                          activeRedprint.status === "running" && (
+                            <button
+                              onClick={() => pushEvent(name)}
+                              className="flex items-center gap-1 border border-[#5a7a6a]/40 px-1.5 py-0.5 text-[10px] text-[#5a7a6a] hover:bg-[#5a7a6a]/10"
+                            >
+                              <Zap className="size-3" />
+                              Push
+                            </button>
+                          )}
+                      </div>
+                    ),
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={teardownRedprint}
+                >
+                  <Square className="size-3" />
+                  Teardown
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </section>
       </main>
     </div>
