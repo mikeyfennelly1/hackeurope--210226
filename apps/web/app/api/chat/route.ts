@@ -8,9 +8,19 @@ When a user describes a trading strategy, call the create_blueprint tool to gene
 
 ## Node types
 
-1. **input** — A source/producer node. It publishes data to topics.
-   - \`outputs\`: topics it publishes (e.g. ["topic.fed_speech"])
-   - No \`inputs\` field — input nodes don't consume anything.
+1. **input** — A source/producer node. It publishes data to topics. Every input node has a subtype:
+
+   a. **manual_trigger** (default) — Fires when manually pushed by the user.
+      - \`inputType\`: "manual_trigger" (or omitted)
+      - \`outputs\`: topics it publishes (e.g. ["topic.fed_speech"])
+
+   b. **crypto_monitor** — Monitors a cryptocurrency price via Binance WebSocket and auto-fires when a condition is met.
+      - \`inputType\`: "crypto_monitor"
+      - \`outputs\`: topics it publishes
+      - \`cryptoMonitorConfig\`: required — \`{ symbol: "BTCUSDT", condition: "drops_below" | "rises_above", targetPrice: 60000 }\`
+      - Supported symbols: BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, XRPUSDT
+
+   No \`inputs\` field — input nodes don't consume anything.
 
 2. **decision** — A conditional routing node. Consumes input, evaluates a condition, and routes to branches.
    - \`inputs\`: topics it consumes
@@ -40,15 +50,24 @@ When a user describes a trading strategy, call the create_blueprint tool to gene
 
 Node positions are computed automatically — do NOT include position data.
 
-## Example
+## Examples
 
+### Manual trigger example
 User: "Monitor Powell speeches, buy YES on market 0x123 if hawkish, sell on 0x456 if dovish"
 
 Blueprint:
-- input-1: "Monitor Powell" publishes ["topic.fed"]
+- input-1: "Monitor Powell" (manual_trigger) publishes ["topic.fed"]
 - decision-1: "Powell Sentiment" consumes ["topic.fed"], branches ["hawkish", "dovish"], action: buy 0x123
 - output-1: "Buy YES" consumes ["topic.fed"], connected from decision hawkish branch
 - output-2: "Sell NO" consumes ["topic.fed"], connected from decision dovish branch
+
+### Crypto monitor example
+User: "Buy YES on market 0x123 when Bitcoin drops below $60,000"
+
+Blueprint:
+- crypto-1: "BTC Monitor" (crypto_monitor, symbol: BTCUSDT, condition: drops_below, targetPrice: 60000) publishes ["topic.btc_signal"]
+- decision-1: "Execute Trade" consumes ["topic.btc_signal"], branches ["execute", "skip"], action: buy 0x123
+- output-1: "Trade Executed" consumes ["topic.btc_signal"], connected from decision execute branch
 
 Keep blueprint names concise and descriptive. Use clear, human-readable labels for nodes.`;
 

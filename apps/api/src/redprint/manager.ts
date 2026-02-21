@@ -5,6 +5,7 @@ import type { BlueprintDefinition } from "@repo/backend/blueprints/definition";
 import { topologicalSort } from "./graph.js";
 import { getConnection } from "./nats.js";
 import type { NodeState, Redprint } from "./types.js";
+import { BinancePriceMonitor } from "../services/binance-ws.js";
 
 const sc = StringCodec();
 
@@ -28,10 +29,12 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
       status: "waiting",
       output: null,
       firedAt: null,
+      ...(node.inputType ? { inputType: node.inputType } : {}),
     });
   }
 
   const subscriptions: Subscription[] = [];
+  const monitors: BinancePriceMonitor[] = [];
 
   const redprint: Redprint = {
     id,
@@ -40,6 +43,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
     nodes,
     decision: null,
     subscriptions,
+    monitors,
     createdAt: new Date().toISOString(),
   };
 
@@ -98,6 +102,10 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
             // Terminal: record the decision and complete
             redprint.decision = nodeDef.action?.verb ?? null;
             redprint.status = "completed";
+            // Clean up all crypto monitors on natural completion
+            for (const monitor of redprint.monitors) {
+              monitor.close();
+            }
             console.log(
               `Redprint ${id} completed: ${redprint.decision} on ${nodeDef.action?.market_id}`,
             );
@@ -108,6 +116,50 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
           }
         }
       })();
+    }
+  }
+
+  // Auto-wire crypto monitor producer nodes
+  for (const nodeDef of blueprint.nodes) {
+    if (
+      nodeDef.role === "producer" &&
+      nodeDef.inputType === "crypto_monitor" &&
+      nodeDef.cryptoMonitorConfig
+    ) {
+      const config = nodeDef.cryptoMonitorConfig;
+      const monitor = new BinancePriceMonitor({
+        symbol: config.symbol,
+        operator: config.condition,
+        targetPrice: config.targetPrice,
+      });
+
+      monitor.on("price", ({ price }: { price: number }) => {
+        const nodeState = redprint.nodes.get(nodeDef.name);
+        if (nodeState) {
+          nodeState.lastPrice = price;
+        }
+      });
+
+      monitor.on(
+        "condition_met",
+        ({ price }: { symbol: string; price: number }) => {
+          console.log(
+            `[CryptoMonitor] ${config.symbol} condition met at $${price}. Firing node "${nodeDef.name}"`,
+          );
+          const nodeState = redprint.nodes.get(nodeDef.name);
+          if (nodeState && nodeState.status === "waiting") {
+            nodeState.status = "fired";
+            nodeState.output = true;
+            nodeState.firedAt = new Date().toISOString();
+
+            const subject = toNatsSubject(id, nodeDef.name);
+            nc.publish(subject, sc.encode(JSON.stringify({ output: true })));
+          }
+        },
+      );
+
+      monitor.start();
+      monitors.push(monitor);
     }
   }
 
@@ -158,6 +210,11 @@ export function teardown(id: string): boolean {
   // Unsubscribe all NATS subscriptions
   for (const sub of redprint.subscriptions) {
     sub.unsubscribe();
+  }
+
+  // Close all crypto price monitors
+  for (const monitor of redprint.monitors) {
+    monitor.close();
   }
 
   redprint.status = "completed";

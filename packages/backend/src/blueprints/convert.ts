@@ -46,6 +46,10 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
       role,
       ...(subscribesTo && subscribesTo.length > 0 ? { subscribesTo } : {}),
       ...(node.action ? { action: node.action } : {}),
+      ...(node.inputType ? { inputType: node.inputType } : {}),
+      ...(node.cryptoMonitorConfig
+        ? { cryptoMonitorConfig: node.cryptoMonitorConfig }
+        : {}),
     };
 
     return def;

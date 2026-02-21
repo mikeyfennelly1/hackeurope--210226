@@ -28,7 +28,10 @@ import {
   BlueprintUtils,
   toDefinition,
   type Blueprint,
+  type CryptoConditionOperator,
+  type CryptoMonitorConfig,
   type Decision,
+  type InputNodeType,
 } from "@repo/backend/blueprints";
 import {
   AlertCircle,
@@ -43,6 +46,7 @@ import {
   Plus,
   Square,
   Trash2,
+  TrendingUp,
   Zap,
 } from "lucide-react";
 
@@ -84,6 +88,8 @@ type FlowNodeData = {
   outputs: string[];
   action?: { verb: Decision; market_id: string };
   hasError?: boolean;
+  inputType?: InputNodeType;
+  cryptoMonitorConfig?: CryptoMonitorConfig;
 };
 
 type RedprintNodeState = {
@@ -92,6 +98,8 @@ type RedprintNodeState = {
   role: string;
   status: string;
   firedAt?: string;
+  inputType?: string;
+  lastPrice?: number;
 };
 
 type RedprintJSON = {
@@ -107,7 +115,7 @@ type ApiRedprintResponse = {
   id: string;
   blueprintName: string;
   status: string;
-  nodes: Record<string, { label?: string; role: string; status: string; output: unknown; firedAt: string | null }>;
+  nodes: Record<string, { label?: string; role: string; status: string; output: unknown; firedAt: string | null; inputType?: string; lastPrice?: number }>;
   decision: { verb: string; market_id: string } | null;
   createdAt: string;
 };
@@ -123,6 +131,8 @@ function apiResponseToRedprint(raw: ApiRedprintResponse): RedprintJSON {
       role: state.role,
       status: state.status,
       firedAt: state.firedAt ?? undefined,
+      inputType: state.inputType,
+      lastPrice: state.lastPrice,
     })),
     decision: raw.decision,
     createdAt: raw.createdAt,
@@ -202,6 +212,8 @@ function blueprintToFlow(blueprint: Blueprint): {
       inputs: [...node.inputs],
       outputs: [...node.outputs],
       action: node.action,
+      inputType: node.inputType,
+      cryptoMonitorConfig: node.cryptoMonitorConfig,
     },
   }));
 
@@ -238,6 +250,10 @@ function flowToBlueprint(
       inputs: [...node.data.inputs],
       outputs: [...node.data.outputs],
       ...(node.data.action ? { action: node.data.action } : {}),
+      ...(node.data.inputType ? { inputType: node.data.inputType } : {}),
+      ...(node.data.cryptoMonitorConfig
+        ? { cryptoMonitorConfig: node.data.cryptoMonitorConfig }
+        : {}),
     })),
     edges: edges.map((edge) => ({
       id: edge.id,
@@ -305,17 +321,41 @@ function BaseNode({
 }
 
 function InputNode({ data }: NodeProps<Node<FlowNodeData, "inputNode">>) {
+  const isCrypto = data.inputType === "crypto_monitor";
+
   return (
     <BaseNode
       label={data.label}
-      subtitle="Input"
-      icon={<Plus className="size-4" />}
+      subtitle={isCrypto ? "Crypto Monitor" : "Manual Trigger"}
+      icon={
+        isCrypto ? (
+          <TrendingUp className="size-4 text-[#e8a838]" />
+        ) : (
+          <Zap className="size-4" />
+        )
+      }
       hasError={data.hasError}
     >
       <Handle type="source" position={Position.Right} />
-      <p className="text-[11px] text-[#8a918c]">
-        Publishes: {data.outputs.join(", ") || "none"}
-      </p>
+      {isCrypto && data.cryptoMonitorConfig ? (
+        <div className="space-y-0.5">
+          <p className="text-[11px] font-medium text-[#e8a838]">
+            {data.cryptoMonitorConfig.symbol}
+          </p>
+          {data.cryptoMonitorConfig.targetPrice > 0 && (
+            <p className="text-[11px] text-[#8a918c]">
+              {data.cryptoMonitorConfig.condition === "drops_below"
+                ? "Drops below"
+                : "Rises above"}{" "}
+              ${data.cryptoMonitorConfig.targetPrice.toLocaleString()}
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-[11px] text-[#8a918c]">
+          Publishes: {data.outputs.join(", ") || "none"}
+        </p>
+      )}
       <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[#5c635e]">
         Source
       </div>
@@ -433,36 +473,10 @@ function FloatingNodeToolbar({
       )}
       <div className="flex items-center gap-1.5 border border-white/10 bg-[#161a19] px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
         <Input
-          className="h-6 w-24 text-[11px]"
+          className="h-6 w-36 text-[11px]"
           value={node.data.label}
           onChange={(e) => onUpdate({ label: e.target.value })}
           placeholder="Label"
-        />
-        <Input
-          className="h-6 w-28 text-[11px]"
-          value={node.data.inputs.join(", ")}
-          onChange={(e) =>
-            onUpdate({
-              inputs: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          placeholder="Inputs"
-        />
-        <Input
-          className="h-6 w-28 text-[11px]"
-          value={node.data.outputs.join(", ")}
-          onChange={(e) =>
-            onUpdate({
-              outputs: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          placeholder="Outputs"
         />
         <button
           onClick={onDelete}
@@ -473,6 +487,19 @@ function FloatingNodeToolbar({
       </div>
       {node.type === "decisionNode" && (
         <div className="mt-1 flex items-center gap-1.5 border border-white/10 bg-[#161a19] px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+          <Input
+            className="h-6 w-36 text-[11px]"
+            value={node.data.outputs.join(", ")}
+            onChange={(e) =>
+              onUpdate({
+                outputs: e.target.value
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              })
+            }
+            placeholder="Branches"
+          />
           <select
             className="h-6 rounded border border-white/10 bg-[#1a1f1d] px-1.5 text-[11px] text-[#c8ccc9]"
             value={node.data.action?.verb ?? "buy"}
@@ -503,6 +530,66 @@ function FloatingNodeToolbar({
           />
         </div>
       )}
+      {node.type === "inputNode" && node.data.inputType === "crypto_monitor" && (
+        <div className="mt-1 flex items-center gap-1.5 border border-white/10 bg-[#161a19] px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+          <select
+            className="h-6 rounded border border-white/10 bg-[#1a1f1d] px-1.5 text-[11px] text-[#c8ccc9]"
+            value={node.data.cryptoMonitorConfig?.symbol ?? "BTCUSDT"}
+            onChange={(e) =>
+              onUpdate({
+                cryptoMonitorConfig: {
+                  ...(node.data.cryptoMonitorConfig ?? {
+                    condition: "drops_below" as CryptoConditionOperator,
+                    targetPrice: 0,
+                  }),
+                  symbol: e.target.value,
+                },
+              })
+            }
+          >
+            <option value="BTCUSDT">BTC / USDT</option>
+            <option value="ETHUSDT">ETH / USDT</option>
+            <option value="SOLUSDT">SOL / USDT</option>
+            <option value="DOGEUSDT">DOGE / USDT</option>
+            <option value="XRPUSDT">XRP / USDT</option>
+          </select>
+          <select
+            className="h-6 rounded border border-white/10 bg-[#1a1f1d] px-1.5 text-[11px] text-[#c8ccc9]"
+            value={node.data.cryptoMonitorConfig?.condition ?? "drops_below"}
+            onChange={(e) =>
+              onUpdate({
+                cryptoMonitorConfig: {
+                  ...(node.data.cryptoMonitorConfig ?? {
+                    symbol: "BTCUSDT",
+                    targetPrice: 0,
+                  }),
+                  condition: e.target.value as CryptoConditionOperator,
+                },
+              })
+            }
+          >
+            <option value="drops_below">Drops below</option>
+            <option value="rises_above">Rises above</option>
+          </select>
+          <Input
+            className="h-6 w-28 text-[11px]"
+            type="number"
+            value={node.data.cryptoMonitorConfig?.targetPrice ?? ""}
+            onChange={(e) =>
+              onUpdate({
+                cryptoMonitorConfig: {
+                  ...(node.data.cryptoMonitorConfig ?? {
+                    symbol: "BTCUSDT",
+                    condition: "drops_below" as CryptoConditionOperator,
+                  }),
+                  targetPrice: parseFloat(e.target.value) || 0,
+                },
+              })
+            }
+            placeholder="Target $"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -513,8 +600,17 @@ type ConnectionInfo = {
   fromHandleType: "source" | "target";
 };
 
-const ALL_NODE_OPTIONS: { type: FlowNodeType; label: string; icon: React.ReactNode; hasTarget: boolean; hasSource: boolean }[] = [
-  { type: "inputNode", label: "Input", icon: <Plus className="size-3 text-[#8a918c]" />, hasTarget: false, hasSource: true },
+type NodeOption = {
+  type: FlowNodeType;
+  inputSubType?: InputNodeType;
+  label: string;
+  icon: React.ReactNode;
+  hasTarget: boolean;
+  hasSource: boolean;
+};
+
+const ALL_NODE_OPTIONS: NodeOption[] = [
+  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
   { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#8a918c]" />, hasTarget: true, hasSource: true },
   { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#8a918c]" />, hasTarget: true, hasSource: false },
 ];
@@ -541,6 +637,7 @@ function ConnectionNodePicker({
     type: FlowNodeType,
     position: { x: number; y: number },
     connectFrom: ConnectionInfo,
+    inputSubType?: InputNodeType,
   ) => void;
   onClose: () => void;
 }) {
@@ -560,7 +657,7 @@ function ConnectionNodePicker({
   );
 
   return (
-    <DropdownMenu open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <DropdownMenu open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
       <DropdownMenuTrigger asChild>
         <div
           className="fixed size-0"
@@ -572,14 +669,14 @@ function ConnectionNodePicker({
         side="bottom"
         sideOffset={0}
         className={`min-w-[120px] ${DROPDOWN_CONTENT_CLASS}`}
-        onMouseDown={(e) => e.stopPropagation()}
+        onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
       >
         {options.map((opt) => (
           <DropdownMenuItem
-            key={opt.type}
+            key={`${opt.type}-${opt.inputSubType ?? ""}`}
             className={DROPDOWN_ITEM_CLASS}
             onClick={() => {
-              onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom);
+              onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom, opt.inputSubType);
               onClose();
             }}
           >
@@ -602,12 +699,14 @@ function CanvasContextMenu({
   onAddNode: (
     type: FlowNodeType,
     position: { x: number; y: number },
+    connectFrom?: ConnectionInfo,
+    inputSubType?: InputNodeType,
   ) => void;
   onDeleteNode: (nodeId: string) => void;
   onClose: () => void;
 }) {
   return (
-    <DropdownMenu open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <DropdownMenu open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
       <DropdownMenuTrigger asChild>
         <div
           className="fixed size-0"
@@ -619,7 +718,7 @@ function CanvasContextMenu({
         side="bottom"
         sideOffset={0}
         className={`min-w-[140px] ${DROPDOWN_CONTENT_CLASS}`}
-        onMouseDown={(e) => e.stopPropagation()}
+        onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
       >
         {menu.type === "pane" ? (
           <DropdownMenuSub>
@@ -634,10 +733,10 @@ function CanvasContextMenu({
             >
               {ALL_NODE_OPTIONS.map((opt) => (
                 <DropdownMenuItem
-                  key={opt.type}
+                  key={`${opt.type}-${opt.inputSubType ?? ""}`}
                   className={DROPDOWN_ITEM_CLASS}
                   onClick={() => {
-                    onAddNode(opt.type, { x: menu.flowX, y: menu.flowY });
+                    onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
                     onClose();
                   }}
                 >
@@ -661,6 +760,53 @@ function CanvasContextMenu({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function InputNodeDropdown({
+  onSelect,
+}: {
+  onSelect: (subType: InputNodeType) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as globalThis.Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <Button
+        variant="secondary"
+        className="w-full"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <Plus className="size-4" />
+        Add Input
+      </Button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-full border border-white/10 bg-[#161a19] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+          <button
+            className={DROPDOWN_ITEM_CLASS}
+            onClick={() => {
+              onSelect("crypto_monitor");
+              setOpen(false);
+            }}
+          >
+            <TrendingUp className="size-3 text-[#e8a838]" />
+            Crypto Monitor
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -863,6 +1009,7 @@ function BlueprintStudioInner() {
     type: FlowNodeType,
     atPosition?: { x: number; y: number },
     connectFrom?: ConnectionInfo,
+    inputSubType?: InputNodeType,
   ) => {
     let position: { x: number; y: number };
 
@@ -885,14 +1032,16 @@ function BlueprintStudioInner() {
         : { x: center.x, y: center.y };
     }
 
+    const isCrypto = type === "inputNode" && inputSubType === "crypto_monitor";
     const id = `${type}-${Date.now()}`;
     const node: Node<FlowNodeData, FlowNodeType> = {
       id,
       type,
       position,
       data: {
-        label:
-          type === "decisionNode"
+        label: isCrypto
+          ? "BTC Price Monitor"
+          : type === "decisionNode"
             ? "New Decision"
             : type === "inputNode"
               ? "New Input"
@@ -904,6 +1053,18 @@ function BlueprintStudioInner() {
             : type === "outputNode"
               ? []
               : ["topic.orders"],
+        ...(type === "inputNode"
+          ? { inputType: inputSubType ?? "manual_trigger" }
+          : {}),
+        ...(isCrypto
+          ? {
+              cryptoMonitorConfig: {
+                symbol: "BTCUSDT",
+                condition: "drops_below" as CryptoConditionOperator,
+                targetPrice: 0,
+              },
+            }
+          : {}),
       },
     };
 
@@ -1210,6 +1371,51 @@ function BlueprintStudioInner() {
           })}
         </div>
 
+        {/* Node Palette */}
+        <div className="border-t border-white/10 px-3 py-3">
+          <p className="mb-2 text-xs uppercase tracking-[0.18em] text-[#5c635e]">
+            Node Palette
+          </p>
+          <div className="grid grid-cols-1 gap-2">
+            <InputNodeDropdown
+              onSelect={(subType) =>
+                addNodeByType("inputNode", undefined, undefined, subType)
+              }
+            />
+            <Button
+              variant="secondary"
+              onClick={() => addNodeByType("outputNode")}
+            >
+              Add Output
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => addNodeByType("decisionNode")}
+            >
+              Add Decision
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => fitView({ duration: 260, padding: 0.24 })}
+            >
+              Recenter Graph
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const laid = computeLayout(nodes, edges);
+                setNodes(laid);
+                requestAnimationFrame(() => {
+                  fitView({ duration: 260, padding: 0.24 });
+                });
+              }}
+            >
+              Auto Layout
+            </Button>
+          </div>
+        </div>
+
+        {/* AI Chat */}
         <div className="mt-auto border-t border-white/10 px-3 py-3">
           <Button
             className="w-full"
@@ -1435,14 +1641,27 @@ function BlueprintStudioInner() {
                   )}
                 </div>
                 {node.role === "producer" &&
-                  activeRedprint.status === "running" && (
+                  activeRedprint.status === "running" &&
+                  (node.inputType === "crypto_monitor" ? (
+                    <div className="text-right">
+                      <p className="text-[10px] text-[#e8a838]">
+                        <TrendingUp className="mr-0.5 inline size-3" />
+                        {node.status === "fired" ? "Triggered" : "Monitoring"}
+                      </p>
+                      {node.lastPrice !== undefined && (
+                        <p className="text-[10px] text-[#8a918c]">
+                          ${node.lastPrice.toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
                     <button
                       className="rounded border border-white/10 px-2 py-1 text-[10px] text-[#5a7a6a] hover:bg-white/5"
                       onClick={() => pushEvent(node.name)}
                     >
                       <Zap className="inline size-3" /> Push
                     </button>
-                  )}
+                  ))}
               </div>
             ))}
           </div>
@@ -1480,7 +1699,7 @@ function BlueprintStudioInner() {
 
       <AlertDialog
         open={!!deletingBlueprintId}
-        onOpenChange={(open) => { if (!open) setDeletingBlueprintId(null); }}
+        onOpenChange={(open: boolean) => { if (!open) setDeletingBlueprintId(null); }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>

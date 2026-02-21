@@ -44,6 +44,12 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
       inputs: "inputs" in node ? node.inputs : [],
       outputs: "outputs" in node ? node.outputs : [],
       ...("action" in node && node.action ? { action: node.action } : {}),
+      ...("inputType" in node && node.inputType
+        ? { inputType: node.inputType }
+        : {}),
+      ...("cryptoMonitorConfig" in node && node.cryptoMonitorConfig
+        ? { cryptoMonitorConfig: node.cryptoMonitorConfig }
+        : {}),
     });
   }
 

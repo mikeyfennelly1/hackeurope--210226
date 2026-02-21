@@ -4,6 +4,16 @@ export { toDefinition } from "./convert";
 
 export type BlueprintNodeType = "input" | "output" | "decision";
 
+export type InputNodeType = "manual_trigger" | "crypto_monitor";
+
+export type CryptoConditionOperator = "drops_below" | "rises_above";
+
+export type CryptoMonitorConfig = {
+  symbol: string;
+  condition: CryptoConditionOperator;
+  targetPrice: number;
+};
+
 export type BlueprintNode = {
   id: string;
   type: BlueprintNodeType;
@@ -15,6 +25,8 @@ export type BlueprintNode = {
   inputs: string[];
   outputs: string[];
   action?: { verb: Decision; market_id: string };
+  inputType?: InputNodeType;
+  cryptoMonitorConfig?: CryptoMonitorConfig;
 };
 
 export type BlueprintEdge = {
@@ -40,7 +52,8 @@ export type ValidationErrorCode =
   | "Cycle detected"
   | "Missing terminal output"
   | "Disconnected output"
-  | "Decision missing action";
+  | "Decision missing action"
+  | "Crypto monitor missing config";
 
 export type ValidationError = {
   code: ValidationErrorCode;
@@ -285,6 +298,20 @@ export const BlueprintUtils = {
         errors.push({
           code: "Decision missing action",
           message: `Decision node '${node.label}' must have an action with verb and market_id`,
+          nodeId: node.id,
+        });
+      }
+      if (
+        node.type === "input" &&
+        node.inputType === "crypto_monitor" &&
+        (!node.cryptoMonitorConfig?.symbol ||
+          !node.cryptoMonitorConfig?.condition ||
+          !node.cryptoMonitorConfig?.targetPrice ||
+          node.cryptoMonitorConfig.targetPrice <= 0)
+      ) {
+        errors.push({
+          code: "Crypto monitor missing config",
+          message: `Crypto monitor node '${node.label}' must have a symbol, condition, and positive target price`,
           nodeId: node.id,
         });
       }

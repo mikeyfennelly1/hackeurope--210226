@@ -14,6 +14,12 @@ export interface NodeDefinition {
   readonly subscribesTo?: readonly string[];
   /** Required for decision nodes. Declares the market action to execute. */
   readonly action?: NodeAction;
+  readonly inputType?: "manual_trigger" | "crypto_monitor";
+  readonly cryptoMonitorConfig?: {
+    readonly symbol: string;
+    readonly condition: "drops_below" | "rises_above";
+    readonly targetPrice: number;
+  };
 }
 
 export interface BlueprintDefinition {

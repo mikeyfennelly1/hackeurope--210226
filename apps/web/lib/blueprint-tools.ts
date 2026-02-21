@@ -8,13 +8,34 @@ import { z } from "zod/v4";
 //   3. Handle it in the onToolCall callback in blueprint-chat.tsx
 //   4. Describe it in the system prompt in app/api/chat/route.ts
 
-const inputNodeSchema = z.object({
+const manualTriggerSchema = z.object({
   type: z.literal("input"),
+  inputType: z
+    .literal("manual_trigger")
+    .optional()
+    .describe("Defaults to manual_trigger when omitted"),
   id: z.string().describe("Unique node id, e.g. 'input-1'"),
   label: z.string().describe("Display label for this node"),
   outputs: z
     .array(z.string())
     .describe("Topics this node publishes, e.g. ['topic.orders']"),
+});
+
+const cryptoMonitorSchema = z.object({
+  type: z.literal("input"),
+  inputType: z.literal("crypto_monitor"),
+  id: z.string().describe("Unique node id, e.g. 'crypto-1'"),
+  label: z.string().describe("Display label, e.g. 'BTC Price Monitor'"),
+  outputs: z
+    .array(z.string())
+    .describe("Topics this node publishes, e.g. ['topic.orders']"),
+  cryptoMonitorConfig: z.object({
+    symbol: z
+      .string()
+      .describe("Trading pair, e.g. 'BTCUSDT', 'ETHUSDT', 'SOLUSDT'"),
+    condition: z.enum(["drops_below", "rises_above"]),
+    targetPrice: z.number().describe("Target price threshold in USD"),
+  }),
 });
 
 const decisionNodeSchema = z.object({
@@ -44,9 +65,10 @@ const outputNodeSchema = z.object({
     .describe("Topics this node consumes, e.g. ['topic.orders']"),
 });
 
-// ─── Discriminated union (extend by adding to this array) ───────
-const nodeSchema = z.discriminatedUnion("type", [
-  inputNodeSchema,
+// ─── Node union (extend by adding to this array) ────────────────
+const nodeSchema = z.union([
+  cryptoMonitorSchema,
+  manualTriggerSchema,
   decisionNodeSchema,
   outputNodeSchema,
 ]);
