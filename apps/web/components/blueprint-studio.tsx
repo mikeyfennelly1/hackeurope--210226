@@ -15,6 +15,7 @@ import {
   type NodeChange,
   type Node,
   type NodeProps,
+  type OnConnectEnd,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -107,7 +108,11 @@ type BlueprintError = ReturnType<
 
 type ContextMenu =
   | { type: "pane"; screenX: number; screenY: number; flowX: number; flowY: number }
+  | { type: "connection"; screenX: number; screenY: number; flowX: number; flowY: number; fromNodeId: string; fromHandleId: string | null; fromHandleType: "source" | "target" }
   | { type: "node"; screenX: number; screenY: number; nodeId: string };
+
+const PHANTOM_NODE_ID = "__phantom__";
+const PHANTOM_EDGE_ID = "__phantom_edge__";
 
 function createStarterBlueprint(name: string): Blueprint {
   return new BlueprintBuilder(name)
@@ -339,6 +344,15 @@ function DecisionNode({ data }: NodeProps<Node<FlowNodeData, "decisionNode">>) {
   );
 }
 
+function PhantomNode() {
+  return (
+    <div>
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+    </div>
+  );
+}
+
 function FloatingNodeToolbar({
   node,
   errors,
@@ -460,29 +474,114 @@ function FloatingNodeToolbar({
   );
 }
 
+type ConnectionInfo = {
+  fromNodeId: string;
+  fromHandleId: string | null;
+  fromHandleType: "source" | "target";
+};
+
+const ALL_NODE_OPTIONS: { type: FlowNodeType; label: string; icon: React.ReactNode; hasTarget: boolean; hasSource: boolean }[] = [
+  { type: "inputNode", label: "Input", icon: <Plus className="size-3 text-[#8a918c]" />, hasTarget: false, hasSource: true },
+  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#8a918c]" />, hasTarget: true, hasSource: true },
+  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#8a918c]" />, hasTarget: true, hasSource: false },
+];
+
+const ITEM_CLASS =
+  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-[#c8ccc9] hover:bg-white/5 transition-colors";
+
+const MENU_CLASS =
+  "fixed z-50 min-w-[140px] border border-white/10 bg-[#161a19] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
+
+function ConnectionNodePicker({
+  menu,
+  onAddNode,
+  onClose,
+}: {
+  menu: Extract<ContextMenu, { type: "connection" }>;
+  onAddNode: (
+    type: FlowNodeType,
+    position: { x: number; y: number },
+    connectFrom: ConnectionInfo,
+  ) => void;
+  onClose: () => void;
+}) {
+  // Subscribe to viewport so we re-render (and reposition) on pan/zoom
+  useViewport();
+  const { flowToScreenPosition } = useReactFlow();
+  const screenPos = flowToScreenPosition({ x: menu.flowX, y: menu.flowY });
+
+  const connectFrom: ConnectionInfo = {
+    fromNodeId: menu.fromNodeId,
+    fromHandleId: menu.fromHandleId,
+    fromHandleType: menu.fromHandleType,
+  };
+
+  const options = ALL_NODE_OPTIONS.filter((opt) =>
+    connectFrom.fromHandleType === "source" ? opt.hasTarget : opt.hasSource,
+  );
+
+  return (
+    <div onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        className={MENU_CLASS}
+        style={{ left: screenPos.x, top: screenPos.y }}
+      >
+        <div className="px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[#5c635e]">
+          Add Node
+        </div>
+        {options.map((opt) => (
+          <button
+            key={opt.type}
+            className={ITEM_CLASS}
+            onClick={() => {
+              onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom);
+              onClose();
+            }}
+          >
+            {opt.icon}
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CanvasContextMenu({
   menu,
   onAddNode,
   onDeleteNode,
   onClose,
 }: {
-  menu: ContextMenu;
-  onAddNode: (type: FlowNodeType, position: { x: number; y: number }) => void;
+  menu: Exclude<ContextMenu, { type: "connection" }>;
+  onAddNode: (
+    type: FlowNodeType,
+    position: { x: number; y: number },
+  ) => void;
   onDeleteNode: (nodeId: string) => void;
   onClose: () => void;
 }) {
   const [showAddSub, setShowAddSub] = useState(false);
 
-  const itemClass =
-    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-[#c8ccc9] hover:bg-white/5 transition-colors";
-
-  const menuClass =
-    "fixed z-50 min-w-[140px] border border-white/10 bg-[#161a19] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
+  const nodeItems = (position: { x: number; y: number }) =>
+    ALL_NODE_OPTIONS.map((opt) => (
+      <button
+        key={opt.type}
+        className={ITEM_CLASS}
+        onClick={() => {
+          onAddNode(opt.type, position);
+          onClose();
+        }}
+      >
+        {opt.icon}
+        {opt.label}
+      </button>
+    ));
 
   return (
     <div onMouseDown={(e) => e.stopPropagation()}>
       <div
-        className={menuClass}
+        className={MENU_CLASS}
         style={{ left: menu.screenX, top: menu.screenY }}
       >
         {menu.type === "pane" ? (
@@ -491,52 +590,23 @@ function CanvasContextMenu({
             onMouseEnter={() => setShowAddSub(true)}
             onMouseLeave={() => setShowAddSub(false)}
           >
-            <button className={itemClass}>
+            <button className={ITEM_CLASS}>
               <Plus className="size-3 text-[#8a918c]" />
               <span className="flex-1">Add node</span>
               <ChevronRight className="size-3 text-[#5c635e]" />
             </button>
             {showAddSub && (
               <div
-                className={menuClass}
+                className={MENU_CLASS}
                 style={{ position: "absolute", left: "100%", top: -5 }}
               >
-                <button
-                  className={itemClass}
-                  onClick={() => {
-                    onAddNode("inputNode", { x: menu.flowX, y: menu.flowY });
-                    onClose();
-                  }}
-                >
-                  <Plus className="size-3 text-[#8a918c]" />
-                  Input
-                </button>
-                <button
-                  className={itemClass}
-                  onClick={() => {
-                    onAddNode("decisionNode", { x: menu.flowX, y: menu.flowY });
-                    onClose();
-                  }}
-                >
-                  <GitBranch className="size-3 text-[#8a918c]" />
-                  Decision
-                </button>
-                <button
-                  className={itemClass}
-                  onClick={() => {
-                    onAddNode("outputNode", { x: menu.flowX, y: menu.flowY });
-                    onClose();
-                  }}
-                >
-                  <CheckCircle2 className="size-3 text-[#8a918c]" />
-                  Output
-                </button>
+                {nodeItems({ x: menu.flowX, y: menu.flowY })}
               </div>
             )}
           </div>
         ) : (
           <button
-            className={itemClass}
+            className={ITEM_CLASS}
             onClick={() => {
               onDeleteNode(menu.nodeId);
               onClose();
@@ -567,10 +637,15 @@ function BlueprintStudioInner() {
   const updateNodeInternals = useUpdateNodeInternals();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
+  const skipNextPaneClickRef = useRef(false);
+
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
   const edgesRef = useRef(edges);
   edgesRef.current = edges;
+
+  const screenToFlowPositionRef = useRef(screenToFlowPosition);
+  screenToFlowPositionRef.current = screenToFlowPosition;
 
   const selectedBlueprint = useMemo(
     () => blueprints.find((item) => item.id === selectedBlueprintId) ?? null,
@@ -642,10 +717,15 @@ function BlueprintStudioInner() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<FlowNodeData, FlowNodeType>>[]) => {
-      const next = applyNodeChanges(changes, nodesRef.current);
+      // Ignore changes to the phantom node
+      const filtered = changes.filter(
+        (c) => !("id" in c && c.id === PHANTOM_NODE_ID),
+      );
+      if (filtered.length === 0) return;
+      const next = applyNodeChanges(filtered, nodesRef.current);
       setNodes(next);
       nodesRef.current = next;
-      const hasDataChange = changes.some((c) => c.type !== "select");
+      const hasDataChange = filtered.some((c) => c.type !== "select");
       if (hasDataChange) {
         persistRef.current(next, edgesRef.current);
       }
@@ -655,7 +735,11 @@ function BlueprintStudioInner() {
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<Edge>[]) => {
-      const next = applyEdgeChanges(changes, edgesRef.current);
+      const filtered = changes.filter(
+        (c) => !("id" in c && c.id === PHANTOM_EDGE_ID),
+      );
+      if (filtered.length === 0) return;
+      const next = applyEdgeChanges(filtered, edgesRef.current);
       setEdges(next);
       edgesRef.current = next;
       persistRef.current(nodesRef.current, next);
@@ -729,7 +813,11 @@ function BlueprintStudioInner() {
     return () => clearInterval(interval);
   }, [activeRedprint?.id, activeRedprint?.status]);
 
-  const addNodeByType = (type: FlowNodeType, atPosition?: { x: number; y: number }) => {
+  const addNodeByType = (
+    type: FlowNodeType,
+    atPosition?: { x: number; y: number },
+    connectFrom?: ConnectionInfo,
+  ) => {
     let position: { x: number; y: number };
 
     if (atPosition) {
@@ -775,8 +863,35 @@ function BlueprintStudioInner() {
 
     const nextNodes = [...nodes, node];
     setNodes(nextNodes);
+    nodesRef.current = nextNodes;
     setSelectedNodeId(id);
-    persistCurrent(nextNodes, edges);
+
+    let nextEdges = edgesRef.current;
+    if (connectFrom) {
+      // Dragged from a source handle → new node is the target
+      // Dragged from a target handle → new node is the source
+      const edge: Edge =
+        connectFrom.fromHandleType === "source"
+          ? {
+              id: `edge-${Date.now()}`,
+              source: connectFrom.fromNodeId,
+              target: id,
+              sourceHandle: connectFrom.fromHandleId,
+              type: "smoothstep",
+            }
+          : {
+              id: `edge-${Date.now()}`,
+              source: id,
+              target: connectFrom.fromNodeId,
+              targetHandle: connectFrom.fromHandleId,
+              type: "smoothstep",
+            };
+      nextEdges = addEdge(edge, edgesRef.current);
+      setEdges(nextEdges);
+      edgesRef.current = nextEdges;
+    }
+
+    persistCurrent(nextNodes, nextEdges);
     requestAnimationFrame(() => {
       fitView({ duration: 260, padding: 0.24 });
     });
@@ -810,6 +925,31 @@ function BlueprintStudioInner() {
       setEdges(nextEdges);
       edgesRef.current = nextEdges;
       persistRef.current(nodesRef.current, nextEdges);
+    },
+    [],
+  );
+
+  const onConnectEnd: OnConnectEnd = useCallback(
+    (event, connectionState) => {
+      if (connectionState.toNode) return;
+      if (!connectionState.fromNode) return;
+
+      const clientX = "changedTouches" in event ? (event.changedTouches[0]?.clientX ?? 0) : event.clientX;
+      const clientY = "changedTouches" in event ? (event.changedTouches[0]?.clientY ?? 0) : event.clientY;
+      const flowPos = screenToFlowPositionRef.current({ x: clientX, y: clientY });
+
+      skipNextPaneClickRef.current = true;
+
+      setContextMenu({
+        type: "connection",
+        screenX: clientX,
+        screenY: clientY,
+        flowX: flowPos.x,
+        flowY: flowPos.y,
+        fromNodeId: connectionState.fromNode.id,
+        fromHandleId: connectionState.fromHandle?.id ?? null,
+        fromHandleType: (connectionState.fromHandle?.type as "source" | "target") ?? "source",
+      });
     },
     [],
   );
@@ -888,9 +1028,45 @@ function BlueprintStudioInner() {
       inputNode: InputNode,
       outputNode: OutputNode,
       decisionNode: DecisionNode,
+      phantom: PhantomNode,
     }),
     [],
   );
+
+  // Inject a phantom node + temporary edge while the connection picker is open
+  const { phantomNodes, phantomEdges } = useMemo(() => {
+    if (!contextMenu || contextMenu.type !== "connection") {
+      return { phantomNodes: [] as Node<FlowNodeData>[], phantomEdges: [] as Edge[] };
+    }
+    const phantomNode: Node<FlowNodeData> = {
+      id: PHANTOM_NODE_ID,
+      type: "phantom",
+      position: { x: contextMenu.flowX, y: contextMenu.flowY },
+      data: { label: "", inputs: [], outputs: [] },
+      style: { width: 1, height: 1, opacity: 0, pointerEvents: "none" },
+    };
+    const phantomEdge: Edge =
+      contextMenu.fromHandleType === "source"
+        ? {
+            id: PHANTOM_EDGE_ID,
+            source: contextMenu.fromNodeId,
+            target: PHANTOM_NODE_ID,
+            sourceHandle: contextMenu.fromHandleId,
+            type: "smoothstep",
+            animated: true,
+            style: { strokeDasharray: "6 3", opacity: 0.4 },
+          }
+        : {
+            id: PHANTOM_EDGE_ID,
+            source: PHANTOM_NODE_ID,
+            target: contextMenu.fromNodeId,
+            targetHandle: contextMenu.fromHandleId,
+            type: "smoothstep",
+            animated: true,
+            style: { strokeDasharray: "6 3", opacity: 0.4 },
+          };
+    return { phantomNodes: [phantomNode], phantomEdges: [phantomEdge] };
+  }, [contextMenu]);
 
   return (
     <div className="relative flex min-h-screen bg-[#0d0f0f] text-[#c8ccc9]">
@@ -1016,13 +1192,15 @@ function BlueprintStudioInner() {
       <main className="relative z-10 flex min-h-screen flex-1">
         <div className="flex-1">
           <ReactFlow
-            nodes={displayNodes}
-            edges={edges}
+            nodes={[...displayNodes, ...phantomNodes as Node<FlowNodeData, FlowNodeType>[]]}
+            edges={[...edges, ...phantomEdges]}
             nodeTypes={nodeTypes}
             proOptions={{ hideAttribution: true }}
             connectionLineType={ConnectionLineType.Step}
+            connectionLineStyle={{ strokeDasharray: "6 3", opacity: 0.4, animation: "dashdraw 0.5s linear infinite" }}
             connectionRadius={80}
             onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={(_event, node) => {
@@ -1030,6 +1208,10 @@ function BlueprintStudioInner() {
               setContextMenu(null);
             }}
             onPaneClick={() => {
+              if (skipNextPaneClickRef.current) {
+                skipNextPaneClickRef.current = false;
+                return;
+              }
               setSelectedNodeId(null);
               setContextMenu(null);
             }}
@@ -1053,7 +1235,16 @@ function BlueprintStudioInner() {
                 nodeId: node.id,
               });
             }}
-            onMoveStart={() => setContextMenu(null)}
+            onMoveStart={() => {
+              if (skipNextPaneClickRef.current) {
+                skipNextPaneClickRef.current = false;
+                return;
+              }
+              // Keep connection picker open during pan — it tracks the viewport
+              setContextMenu((cur) =>
+                cur?.type === "connection" ? cur : null,
+              );
+            }}
             panOnScroll
             zoomOnScroll={false}
             fitView
@@ -1069,14 +1260,20 @@ function BlueprintStudioInner() {
               onDelete={deleteSelectedNode}
             />
           )}
-          {contextMenu && (
+          {contextMenu && contextMenu.type === "connection" ? (
+            <ConnectionNodePicker
+              menu={contextMenu}
+              onAddNode={addNodeByType}
+              onClose={() => setContextMenu(null)}
+            />
+          ) : contextMenu ? (
             <CanvasContextMenu
               menu={contextMenu}
               onAddNode={addNodeByType}
               onDeleteNode={deleteNodeById}
               onClose={() => setContextMenu(null)}
             />
-          )}
+          ) : null}
         </div>
       </main>
 
