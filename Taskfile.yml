@@ -1,0 +1,40 @@
+version: '3'
+
+vars:
+  NATS: "{{.HOME}}/go/bin/nats"
+  NATS_URL: "nats://localhost:4222"
+
+tasks:
+  "nats:start":
+    desc: Start NATS server with JetStream enabled
+    cmds:
+      - ./scripts/nats-start.sh
+
+  "nats:connections":
+    desc: Show all active NATS connections with their names
+    cmds:
+      - "{{.NATS}} --server {{.NATS_URL}} server report connections --sort cid"
+
+  "nats:connections:name":
+    desc: "Filter active NATS connections by name (usage: task 'nats:connections:name' NAME=myapp)"
+    vars:
+      NAME: '{{default "" .NAME}}'
+    cmds:
+      - |
+        {{.NATS}} --server {{.NATS_URL}} server report connections --json \
+          | jq -r '
+            .[] | .connz.connections[]
+            | select(
+                if "{{.NAME}}" == "" then true
+                else (.name // "" | ascii_downcase | contains("{{.NAME}}" | ascii_downcase))
+                end
+              )
+            | [.name, .ip, (.port | tostring), .lang, .version, ((.num_subscriptions // 0) | tostring) + " subs"]
+            | @tsv
+          ' \
+          | column -t -s $'\t'
+
+  "nats:connections:watch":
+    desc: Watch active NATS connections, refreshing every 2 seconds
+    cmds:
+      - watch -n 2 "{{.NATS}} --server {{.NATS_URL}} server report connections --sort cid"
