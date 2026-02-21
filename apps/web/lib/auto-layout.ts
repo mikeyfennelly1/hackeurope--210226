@@ -52,19 +52,50 @@ export function computeLayout<N extends Node>(
 
   dagre.layout(g);
 
-  return nodes.map((node) => {
+  const positionMap = new Map<string, { x: number; y: number }>();
+  for (const node of nodes) {
     const pos = g.node(node.id);
-    const dims =
-      NODE_DIMENSIONS[node.type ?? ""] ?? DEFAULT_DIMENSIONS;
+    const dims = NODE_DIMENSIONS[node.type ?? ""] ?? DEFAULT_DIMENSIONS;
+    positionMap.set(node.id, {
+      x: snap(pos.x - dims.width / 2),
+      y: snap(pos.y - dims.height / 2),
+    });
+  }
 
-    // Dagre returns center coordinates; React Flow uses top-left.
-    // Snap to grid so nodes align with the background.
-    return {
-      ...node,
-      position: {
-        x: snap(pos.x - dims.width / 2),
-        y: snap(pos.y - dims.height / 2),
-      },
-    };
+  // Fix decision-node branch ordering: dagre doesn't know about source
+  // handles, so targets may be placed in the wrong vertical order.  For each
+  // decision node, sort its branch-connected targets so the top-most handle
+  // maps to the top-most target.
+  for (const node of nodes) {
+    if (node.type !== "decisionNode") continue;
+    const data = node.data as { outputs?: string[] };
+    const branches = data?.outputs;
+    if (!branches || branches.length < 2) continue;
+
+    // Collect target node ids in branch (handle) order
+    const branchTargets: { handle: string; targetId: string }[] = [];
+    for (const handle of branches) {
+      const edge = edges.find(
+        (e) => e.source === node.id && e.sourceHandle === handle,
+      );
+      if (edge) branchTargets.push({ handle, targetId: edge.target });
+    }
+    if (branchTargets.length < 2) continue;
+
+    // Get current Y positions assigned by dagre
+    const currentYs = branchTargets
+      .map((bt) => positionMap.get(bt.targetId)?.y ?? 0)
+      .sort((a, b) => a - b);
+
+    // Assign sorted Y positions in branch order (first branch → smallest Y)
+    for (let i = 0; i < branchTargets.length; i++) {
+      const pos = positionMap.get(branchTargets[i]!.targetId);
+      if (pos) pos.y = currentYs[i]!;
+    }
+  }
+
+  return nodes.map((node) => {
+    const pos = positionMap.get(node.id)!;
+    return { ...node, position: { x: pos.x, y: pos.y } };
   });
 }
