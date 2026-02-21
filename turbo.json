@@ -1,17 +1,21 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
+  "globalPassThroughEnv": ["PORT"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "transit": {
+      "dependsOn": ["^transit"]
     },
     "lint": {
-      "dependsOn": ["^lint"]
+      "dependsOn": ["transit"]
     },
     "check-types": {
-      "dependsOn": ["^check-types"]
+      "dependsOn": ["transit"]
     },
     "dev": {
       "cache": false,
