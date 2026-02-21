@@ -1,3 +1,4 @@
+import cors from "cors";
 import express from "express";
 import { connectNats } from "./redprint/nats.js";
 import { redprintRouter } from "./redprint/routes.js";
@@ -7,6 +8,7 @@ import { errorHandler } from "./middleware/index.js";
 const app = express();
 const port = process.env.PORT || 3001;
 
+app.use(cors());
 app.use(express.json());
 
 // Redprint routes

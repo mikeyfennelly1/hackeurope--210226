@@ -1,0 +1,57 @@
+import type { Blueprint } from "./index";
+import type {
+  BlueprintDefinition,
+  NodeDefinition,
+  NodeRole,
+} from "./definition/types";
+
+/**
+ * Converts a visual Blueprint (edge-based React Flow model)
+ * into a BlueprintDefinition (subscription-list model for the runtime).
+ */
+export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
+  // Build sets of nodes that have outgoing edges
+  const hasOutgoing = new Set<string>();
+  // Build map: target node id → list of source node ids
+  const incomingEdges = new Map<string, string[]>();
+
+  for (const edge of blueprint.edges) {
+    hasOutgoing.add(edge.source);
+    const incoming = incomingEdges.get(edge.target);
+    if (incoming) {
+      incoming.push(edge.source);
+    } else {
+      incomingEdges.set(edge.target, [edge.source]);
+    }
+  }
+
+  const nodes: NodeDefinition[] = blueprint.nodes.map((node) => {
+    // Map visual type → runtime role
+    let role: NodeRole;
+    if (node.type === "input") {
+      role = "producer";
+    } else if (node.type === "decision") {
+      role = "decision";
+    } else {
+      // "output" nodes: hybrid if they have outgoing edges, consumer otherwise
+      role = hasOutgoing.has(node.id) ? "hybrid" : "consumer";
+    }
+
+    // subscribesTo = IDs of nodes with edges pointing into this node
+    const subscribesTo = incomingEdges.get(node.id);
+
+    const def: NodeDefinition = {
+      name: node.id,
+      role,
+      ...(subscribesTo && subscribesTo.length > 0 ? { subscribesTo } : {}),
+      ...(node.action ? { action: node.action } : {}),
+    };
+
+    return def;
+  });
+
+  return {
+    name: blueprint.name,
+    nodes,
+  };
+}

@@ -14,7 +14,7 @@ describe("definition blueprint", () => {
         name: "decision",
         role: "decision",
         subscribesTo: ["source"],
-        decide: () => "buy",
+        action: { verb: "buy", market_id: "TEST-MARKET" },
       })
       .build();
 
@@ -33,7 +33,7 @@ describe("definition blueprint", () => {
           name: "decision",
           role: "decision",
           subscribesTo: ["missing-node"],
-          decide: () => "sell",
+          action: { verb: "sell", market_id: "TEST-MARKET" },
         },
       ],
     });
@@ -56,7 +56,7 @@ describe("definition blueprint", () => {
           name: "decision",
           role: "decision",
           subscribesTo: ["compute"],
-          decide: () => "buy",
+          action: { verb: "buy", market_id: "TEST-MARKET" },
         },
       ],
     });
