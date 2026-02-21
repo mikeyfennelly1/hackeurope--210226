@@ -6,6 +6,7 @@ import {
   applyNodeChanges,
   addEdge,
   Background,
+  ConnectionLineType,
   Controls,
   type Connection,
   type EdgeChange,
@@ -19,6 +20,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
   useUpdateNodeInternals,
+  useViewport,
 } from "@xyflow/react";
 import {
   BlueprintBuilder,
@@ -28,6 +30,7 @@ import {
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronRight,
   GitBranch,
   Plus,
   Trash2,
@@ -36,13 +39,6 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 const STORAGE_KEY = "blueprints:v1";
@@ -53,11 +49,16 @@ type FlowNodeData = {
   label: string;
   inputs: string[];
   outputs: string[];
+  hasError?: boolean;
 };
 
 type BlueprintError = ReturnType<
   typeof BlueprintUtils.validate
 >["errors"][number];
+
+type ContextMenu =
+  | { type: "pane"; screenX: number; screenY: number; flowX: number; flowY: number }
+  | { type: "node"; screenX: number; screenY: number; nodeId: string };
 
 function createStarterBlueprint(name: string): Blueprint {
   return new BlueprintBuilder(name)
@@ -70,23 +71,23 @@ function createStarterBlueprint(name: string): Blueprint {
       outputs: ["topic.orders"],
     })
     .addNode({
-      id: "output-1",
-      type: "output",
-      label: "Output",
-      position: { x: 440, y: 240 },
-      inputs: ["topic.orders"],
-      outputs: [],
-    })
-    .addNode({
       id: "decision-1",
       type: "decision",
-      label: "Terminal Decision",
-      position: { x: 780, y: 240 },
+      label: "Decision",
+      position: { x: 400, y: 220 },
       inputs: ["topic.orders"],
       outputs: ["approved", "rejected"],
     })
-    .addEdge({ id: "edge-1", source: "input-1", target: "output-1" })
-    .addEdge({ id: "edge-2", source: "output-1", target: "decision-1" })
+    .addNode({
+      id: "output-1",
+      type: "output",
+      label: "Output",
+      position: { x: 760, y: 240 },
+      inputs: ["topic.orders"],
+      outputs: [],
+    })
+    .addEdge({ id: "edge-1", source: "input-1", target: "decision-1" })
+    .addEdge({ id: "edge-2", source: "decision-1", target: "output-1", sourceHandle: "approved" })
     .build();
 }
 
@@ -188,15 +189,17 @@ function BaseNode({
   label,
   icon,
   subtitle,
+  hasError,
   children,
 }: {
   label: string;
   subtitle: string;
   icon: React.ReactNode;
+  hasError?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-w-[200px] border border-white/10 bg-[#161a19] p-3 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+    <div className={`min-w-[200px] border bg-[#161a19] p-3 shadow-[0_8px_24px_rgba(0,0,0,0.35)] ${hasError ? "border-[#c45c5c]" : "border-white/10"}`}>
       <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-2">
         <div className="flex items-center gap-2">
           <span className="text-[#8a918c]">{icon}</span>
@@ -217,6 +220,7 @@ function InputNode({ data }: NodeProps<Node<FlowNodeData, "inputNode">>) {
       label={data.label}
       subtitle="Input"
       icon={<Plus className="size-4" />}
+      hasError={data.hasError}
     >
       <Handle type="source" position={Position.Right} />
       <p className="text-[11px] text-[#8a918c]">
@@ -235,17 +239,14 @@ function OutputNode({ data }: NodeProps<Node<FlowNodeData, "outputNode">>) {
       label={data.label}
       subtitle="Output"
       icon={<CheckCircle2 className="size-4" />}
+      hasError={data.hasError}
     >
       <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
       <p className="text-[11px] text-[#8a918c]">
         Consumes: {data.inputs.join(", ") || "none"}
       </p>
-      <p className="text-[11px] text-[#8a918c]">
-        Publishes: {data.outputs.join(", ") || "none"}
-      </p>
       <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[#5c635e]">
-        Target / Source
+        Sink
       </div>
     </BaseNode>
   );
@@ -257,6 +258,7 @@ function DecisionNode({ data }: NodeProps<Node<FlowNodeData, "decisionNode">>) {
       label={data.label}
       subtitle="Decision"
       icon={<GitBranch className="size-4" />}
+      hasError={data.hasError}
     >
       <Handle type="target" position={Position.Left} />
       <p className="text-[11px] text-[#8a918c]">
@@ -266,22 +268,201 @@ function DecisionNode({ data }: NodeProps<Node<FlowNodeData, "decisionNode">>) {
         Branches
       </div>
       <div className="mt-1 space-y-1">
-        {data.outputs.map((branch, index) => (
+        {data.outputs.map((branch) => (
           <div
             key={branch}
-            className="relative rounded border border-white/10 px-2 py-1 text-[11px] text-[#c8ccc9]"
+            className="relative flex items-center rounded border border-white/10 px-2 py-1 text-[11px] text-[#c8ccc9]"
           >
             {branch}
             <Handle
               id={branch}
               type="source"
               position={Position.Right}
-              style={{ top: 20 + index * 34 }}
+              style={{ top: "50%" }}
             />
           </div>
         ))}
       </div>
     </BaseNode>
+  );
+}
+
+function FloatingNodeToolbar({
+  node,
+  errors,
+  onUpdate,
+  onDelete,
+}: {
+  node: Node<FlowNodeData, FlowNodeType>;
+  errors: BlueprintError[];
+  onUpdate: (patch: Partial<FlowNodeData>) => void;
+  onDelete: () => void;
+}) {
+  const { flowToScreenPosition, getNode } = useReactFlow();
+  useViewport(); // subscribe to viewport changes so toolbar follows node
+
+  const internalNode = getNode(node.id);
+  const nodeWidth = internalNode?.measured?.width ?? 200;
+  const screenPos = flowToScreenPosition({
+    x: node.position.x + nodeWidth / 2,
+    y: node.position.y,
+  });
+  const nodeErrors = errors.filter((e) => e.nodeId === node.id);
+
+  return (
+    <div
+      className="fixed z-50 flex flex-col items-center"
+      style={{
+        left: screenPos.x,
+        top: screenPos.y,
+        transform: "translate(-50%, -100%)",
+        paddingBottom: 8,
+      }}
+    >
+      {nodeErrors.length > 0 && (
+        <div className="mb-1 space-y-1">
+          {nodeErrors.map((error) => (
+            <div
+              key={`${error.code}-${error.nodeId ?? ""}`}
+              className="rounded border border-[#8b4449]/60 bg-[#161a19] px-2 py-1 text-[10px] text-[#c45c5c]"
+            >
+              {error.message}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 border border-white/10 bg-[#161a19] px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+        <Input
+          className="h-6 w-24 text-[11px]"
+          value={node.data.label}
+          onChange={(e) => onUpdate({ label: e.target.value })}
+          placeholder="Label"
+        />
+        <Input
+          className="h-6 w-28 text-[11px]"
+          value={node.data.inputs.join(", ")}
+          onChange={(e) =>
+            onUpdate({
+              inputs: e.target.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+          placeholder="Inputs"
+        />
+        <Input
+          className="h-6 w-28 text-[11px]"
+          value={node.data.outputs.join(", ")}
+          onChange={(e) =>
+            onUpdate({
+              outputs: e.target.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+          placeholder="Outputs"
+        />
+        <button
+          onClick={onDelete}
+          className="ml-0.5 text-[#8a918c] hover:text-[#c45c5c]"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CanvasContextMenu({
+  menu,
+  onAddNode,
+  onDeleteNode,
+  onClose,
+}: {
+  menu: ContextMenu;
+  onAddNode: (type: FlowNodeType, position: { x: number; y: number }) => void;
+  onDeleteNode: (nodeId: string) => void;
+  onClose: () => void;
+}) {
+  const [showAddSub, setShowAddSub] = useState(false);
+
+  const itemClass =
+    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-[#c8ccc9] hover:bg-white/5 transition-colors";
+
+  const menuClass =
+    "fixed z-50 min-w-[140px] border border-white/10 bg-[#161a19] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
+
+  return (
+    <div onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        className={menuClass}
+        style={{ left: menu.screenX, top: menu.screenY }}
+      >
+        {menu.type === "pane" ? (
+          <div
+            className="relative"
+            onMouseEnter={() => setShowAddSub(true)}
+            onMouseLeave={() => setShowAddSub(false)}
+          >
+            <button className={itemClass}>
+              <Plus className="size-3 text-[#8a918c]" />
+              <span className="flex-1">Add node</span>
+              <ChevronRight className="size-3 text-[#5c635e]" />
+            </button>
+            {showAddSub && (
+              <div
+                className={menuClass}
+                style={{ position: "absolute", left: "100%", top: 0 }}
+              >
+                <button
+                  className={itemClass}
+                  onClick={() => {
+                    onAddNode("inputNode", { x: menu.flowX, y: menu.flowY });
+                    onClose();
+                  }}
+                >
+                  <Plus className="size-3 text-[#8a918c]" />
+                  Input
+                </button>
+                <button
+                  className={itemClass}
+                  onClick={() => {
+                    onAddNode("decisionNode", { x: menu.flowX, y: menu.flowY });
+                    onClose();
+                  }}
+                >
+                  <GitBranch className="size-3 text-[#8a918c]" />
+                  Decision
+                </button>
+                <button
+                  className={itemClass}
+                  onClick={() => {
+                    onAddNode("outputNode", { x: menu.flowX, y: menu.flowY });
+                    onClose();
+                  }}
+                >
+                  <CheckCircle2 className="size-3 text-[#8a918c]" />
+                  Output
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <button
+            className={itemClass}
+            onClick={() => {
+              onDeleteNode(menu.nodeId);
+              onClose();
+            }}
+          >
+            <Trash2 className="size-3 text-[#8a918c]" />
+            Delete node
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -295,12 +476,33 @@ function BlueprintStudioInner() {
   );
   const [status, setStatus] = useState<"saved" | "invalid">("saved");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
   const selectedBlueprint = useMemo(
     () => blueprints.find((item) => item.id === selectedBlueprintId) ?? null,
     [blueprints, selectedBlueprintId],
+  );
+
+  const errorNodeIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const error of validationErrors) {
+      if (error.nodeId) ids.add(error.nodeId);
+    }
+    return ids;
+  }, [validationErrors]);
+
+  const displayNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          hasError: errorNodeIds.has(node.id),
+        },
+      })),
+    [nodes, errorNodeIds],
   );
 
   useEffect(() => {
@@ -310,14 +512,16 @@ function BlueprintStudioInner() {
   }, []);
 
   useEffect(() => {
-    if (!selectedBlueprint) return;
-    const flow = blueprintToFlow(selectedBlueprint);
+    const bp = blueprints.find((item) => item.id === selectedBlueprintId) ?? null;
+    if (!bp) return;
+    const flow = blueprintToFlow(bp);
     setNodes(flow.nodes);
     setEdges(flow.edges);
-    const result = BlueprintUtils.validate(selectedBlueprint);
+    const result = BlueprintUtils.validate(bp);
     setValidationErrors(result.errors);
     setStatus(result.valid ? "saved" : "invalid");
-  }, [selectedBlueprint]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync flow state when switching blueprints
+  }, [selectedBlueprintId]);
 
   const persistCurrent = useCallback(
     (nextNodes: Node<FlowNodeData, FlowNodeType>[], nextEdges: Edge[]) => {
@@ -359,26 +563,33 @@ function BlueprintStudioInner() {
     [edges, nodes, persistCurrent],
   );
 
-  const addNodeByType = (type: FlowNodeType) => {
-    const flowElement = document.querySelector(
-      ".react-flow",
-    ) as HTMLElement | null;
-    const fallbackX = window.innerWidth / 2;
-    const fallbackY = window.innerHeight / 2;
-    const bounds = flowElement?.getBoundingClientRect();
-    const center = screenToFlowPosition({
-      x: bounds ? bounds.left + bounds.width / 2 : fallbackX,
-      y: bounds ? bounds.top + bounds.height / 2 : fallbackY,
-    });
+  const addNodeByType = (type: FlowNodeType, atPosition?: { x: number; y: number }) => {
+    let position: { x: number; y: number };
+
+    if (atPosition) {
+      position = atPosition;
+    } else {
+      const flowElement = document.querySelector(
+        ".react-flow",
+      ) as HTMLElement | null;
+      const fallbackX = window.innerWidth / 2;
+      const fallbackY = window.innerHeight / 2;
+      const bounds = flowElement?.getBoundingClientRect();
+      const center = screenToFlowPosition({
+        x: bounds ? bounds.left + bounds.width / 2 : fallbackX,
+        y: bounds ? bounds.top + bounds.height / 2 : fallbackY,
+      });
+      const anchor = nodes[nodes.length - 1];
+      position = anchor
+        ? { x: anchor.position.x + 260, y: anchor.position.y + 24 }
+        : { x: center.x, y: center.y };
+    }
 
     const id = `${type}-${Date.now()}`;
-    const anchor = nodes[nodes.length - 1];
     const node: Node<FlowNodeData, FlowNodeType> = {
       id,
       type,
-      position: anchor
-        ? { x: anchor.position.x + 260, y: anchor.position.y + 24 }
-        : { x: center.x, y: center.y },
+      position,
       data: {
         label:
           type === "decisionNode"
@@ -455,17 +666,20 @@ function BlueprintStudioInner() {
     persistCurrent(nextNodes, edges);
   };
 
-  const deleteSelectedNode = () => {
-    if (!selectedNodeId) return;
-    const nextNodes = nodes.filter((node) => node.id !== selectedNodeId);
+  const deleteNodeById = (nodeId: string) => {
+    const nextNodes = nodes.filter((node) => node.id !== nodeId);
     const nextEdges = edges.filter(
-      (edge) =>
-        edge.source !== selectedNodeId && edge.target !== selectedNodeId,
+      (edge) => edge.source !== nodeId && edge.target !== nodeId,
     );
-    setSelectedNodeId(null);
+    if (selectedNodeId === nodeId) setSelectedNodeId(null);
     setNodes(nextNodes);
     setEdges(nextEdges);
     persistCurrent(nextNodes, nextEdges);
+  };
+
+  const deleteSelectedNode = () => {
+    if (!selectedNodeId) return;
+    deleteNodeById(selectedNodeId);
   };
 
   const createBlueprint = () => {
@@ -616,122 +830,73 @@ function BlueprintStudioInner() {
             </Button>
           </div>
         </div>
+
       </aside>
 
       <main className="relative z-10 flex min-h-screen flex-1">
-        <div className="flex-1 border-r border-white/10">
+        <div className="flex-1">
           <ReactFlow
-            nodes={nodes}
+            nodes={displayNodes}
             edges={edges}
             nodeTypes={nodeTypes}
             proOptions={{ hideAttribution: true }}
+            connectionLineType={ConnectionLineType.Step}
+            connectionRadius={80}
             onConnect={onConnect}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
-            onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
+            onNodeClick={(_event, node) => {
+              setSelectedNodeId(node.id);
+              setContextMenu(null);
+            }}
+            onPaneClick={() => {
+              setSelectedNodeId(null);
+              setContextMenu(null);
+            }}
+            onPaneContextMenu={(event) => {
+              event.preventDefault();
+              const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+              setContextMenu({
+                type: "pane",
+                screenX: event.clientX,
+                screenY: event.clientY,
+                flowX: flowPos.x,
+                flowY: flowPos.y,
+              });
+            }}
+            onNodeContextMenu={(event, node) => {
+              event.preventDefault();
+              setContextMenu({
+                type: "node",
+                screenX: event.clientX,
+                screenY: event.clientY,
+                nodeId: node.id,
+              });
+            }}
+            panOnScroll
+            zoomOnScroll={false}
             fitView
           >
             <Background color="rgba(255,255,255,0.06)" gap={22} />
             <Controls />
           </ReactFlow>
+          {selectedNode && (
+            <FloatingNodeToolbar
+              node={selectedNode}
+              errors={validationErrors}
+              onUpdate={updateSelectedNode}
+              onDelete={deleteSelectedNode}
+            />
+          )}
+          {contextMenu && (
+            <CanvasContextMenu
+              menu={contextMenu}
+              onAddNode={addNodeByType}
+              onDeleteNode={deleteNodeById}
+              onClose={() => setContextMenu(null)}
+            />
+          )}
         </div>
-
-        <section className="w-[360px] overflow-y-auto bg-[#0d0f0f] p-4">
-          <Card className="border-white/10 bg-[#161a19] py-4">
-            <CardHeader className="px-4">
-              <CardTitle className="text-sm text-[#e0e5e2]">
-                Node Inspector
-              </CardTitle>
-              <CardDescription className="text-[#8a918c]">
-                Select a node to edit label, topics, and decision branches.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 px-4">
-              {selectedNode ? (
-                <>
-                  <div className="space-y-1">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[#5c635e]">
-                      Label
-                    </p>
-                    <Input
-                      value={selectedNode.data.label}
-                      onChange={(event) =>
-                        updateSelectedNode({ label: event.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[#5c635e]">
-                      Inputs (comma separated)
-                    </p>
-                    <Input
-                      value={selectedNode.data.inputs.join(", ")}
-                      onChange={(event) =>
-                        updateSelectedNode({
-                          inputs: event.target.value
-                            .split(",")
-                            .map((item) => item.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[#5c635e]">
-                      Outputs (comma separated)
-                    </p>
-                    <Input
-                      value={selectedNode.data.outputs.join(", ")}
-                      onChange={(event) =>
-                        updateSelectedNode({
-                          outputs: event.target.value
-                            .split(",")
-                            .map((item) => item.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                    />
-                  </div>
-                  <Button
-                    variant="destructive"
-                    onClick={deleteSelectedNode}
-                    className="w-full"
-                  >
-                    Delete Node
-                  </Button>
-                </>
-              ) : (
-                <p className="text-sm text-[#8a918c]">No node selected.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="mt-4 border-white/10 bg-[#161a19] py-4">
-            <CardHeader className="px-4">
-              <CardTitle className="text-sm text-[#e0e5e2]">
-                Validation
-              </CardTitle>
-              <CardDescription className="text-[#8a918c]">
-                Frontend guardrails using `BlueprintUtils.validate()`.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 px-4">
-              {validationErrors.length === 0 ? (
-                <p className="text-sm text-[#8a918c]">All checks passing.</p>
-              ) : (
-                validationErrors.map((error) => (
-                  <div
-                    key={`${error.code}-${error.edgeId ?? ""}-${error.nodeId ?? ""}`}
-                    className="border border-[#8b4449]/60 p-2 text-xs text-[#e0e5e2]"
-                  >
-                    <p className="font-semibold text-[#c45c5c]">{error.code}</p>
-                    <p className="text-[#c8ccc9]">{error.message}</p>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </section>
       </main>
     </div>
   );
