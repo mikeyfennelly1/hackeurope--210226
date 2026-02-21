@@ -5,9 +5,7 @@ export type Decision = "buy" | "sell";
 export interface NodeDefinition {
   readonly name: string;
   readonly role: NodeRole;
-  /** Required for consumer, hybrid, and decision roles. */
   readonly subscribesTo?: readonly string[];
-  /** Required for decision nodes. Receives outputs from subscribed nodes and returns a Decision. */
   readonly decide?: (inputs: Record<string, unknown>) => Decision;
 }
 

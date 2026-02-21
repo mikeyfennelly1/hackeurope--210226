@@ -86,6 +86,21 @@
       "sourceType": "github",
       "computedHash": "a6ae5575796714f8e7425571aff31e6a052f7eea91ed04cd2d400d5a25d3873c"
     },
+    "react-flow": {
+      "source": "existential-birds/beagle",
+      "sourceType": "github",
+      "computedHash": "2e0b696ee5d7d3407263fb8330c1ed455837eb86f52464688e3bc7c60304b7b7"
+    },
+    "react-flow-advanced": {
+      "source": "existential-birds/beagle",
+      "sourceType": "github",
+      "computedHash": "8584b77e9491af20225a185bebdb3823bbc3e66e1da74d2e5e9dc5114559ef19"
+    },
+    "shadcn-ui": {
+      "source": "giuseppe-trisciuoglio/developer-kit",
+      "sourceType": "github",
+      "computedHash": "fc286bef24c7ed9f6d22410ee524b3a83cc38825fb06313d46b5b13a90454135"
+    },
     "turborepo": {
       "source": "vercel/turborepo",
       "sourceType": "github",

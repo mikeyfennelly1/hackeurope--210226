@@ -1,5 +1,5 @@
-import type { BlueprintDefinition, NodeDefinition } from "./types.js";
-import { BlueprintUtils } from "./validate.js";
+import type { BlueprintDefinition, NodeDefinition } from "./types";
+import { BlueprintUtils } from "./validate";
 
 export class BlueprintBuilder {
   private readonly name: string;
@@ -14,10 +14,6 @@ export class BlueprintBuilder {
     return this;
   }
 
-  /**
-   * Builds and validates the BlueprintDefinition.
-   * Throws if validation fails.
-   */
   build(): BlueprintDefinition {
     const definition: BlueprintDefinition = {
       name: this.name,
@@ -26,7 +22,9 @@ export class BlueprintBuilder {
 
     const result = BlueprintUtils.validate(definition);
     if (!result.valid) {
-      const messages = result.errors.map((e) => `  ${e.path}: ${e.message}`);
+      const messages = result.errors.map(
+        (error) => `  ${error.path}: ${error.message}`,
+      );
       throw new Error(
         `Invalid blueprint "${this.name}":\n${messages.join("\n")}`,
       );

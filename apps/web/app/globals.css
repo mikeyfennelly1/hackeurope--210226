@@ -1,50 +1,137 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 6px);
+  --radius-3xl: calc(var(--radius) + 8px);
+  --radius-4xl: calc(var(--radius) + 10px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --radius: 0.5rem;
+  --background: #0d0f0f;
+  --foreground: #c8ccc9;
+  --card: #0d0f0f;
+  --card-foreground: #c8ccc9;
+  --popover: #161a19;
+  --popover-foreground: #c8ccc9;
+  --primary: #5a7a6a;
+  --primary-foreground: #e0e5e2;
+  --secondary: #1a1f1d;
+  --secondary-foreground: #8a918c;
+  --muted: #161a19;
+  --muted-foreground: #5c635e;
+  --accent: #5a7a6a;
+  --accent-foreground: #e0e5e2;
+  --destructive: #c45c5c;
+  --destructive-foreground: #e0e5e2;
+  --border: rgba(255, 255, 255, 0.05);
+  --input: #1a1f1d;
+  --ring: #5a7a6a;
+  --chart-1: #1c5d89;
+  --chart-2: #437c6e;
+  --chart-3: #a2916e;
+  --chart-4: #8b4449;
+  --chart-5: #45385c;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", system-ui, sans-serif;
   }
 }
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
+.ambient-glow {
+  position: fixed;
+  bottom: -120px;
+  left: -120px;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(
+    circle,
+    rgba(90, 122, 106, 0.06) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
+::-webkit-scrollbar {
+  width: 4px;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
 }
 
-.imgDark {
-  display: none;
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+.react-flow {
+  background: #0d0f0f;
+}
 
-  .imgLight {
-    display: none;
-  }
-  .imgDark {
-    display: unset;
-  }
+.react-flow__edge-path {
+  stroke: rgba(224, 229, 226, 0.6);
+  stroke-width: 1.5;
+}
+
+.react-flow__controls {
+  background: #1a1f1d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.react-flow__controls button {
+  background: #1a1f1d;
+  color: #c8ccc9;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }

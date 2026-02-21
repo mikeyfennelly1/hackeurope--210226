@@ -3,10 +3,15 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "exports": {
+    "./blueprints": "./src/blueprints/index.ts",
+    "./blueprints/definition": "./src/blueprints/definition/index.ts"
+  },
   "scripts": {
     "dev": "convex dev",
+    "test": "vitest run",
     "lint": "eslint --max-warnings 0",
-    "check-types": "tsc --noEmit -p convex/tsconfig.json"
+    "check-types": "tsc --noEmit -p convex/tsconfig.json && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "convex": "^1.32.0"
@@ -15,6 +20,7 @@
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "eslint": "^9.39.1",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^4.0.18"
   }
 }
