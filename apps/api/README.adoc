@@ -1,0 +1,232 @@
+= API — Event-Driven Architecture
+:toc: left
+:toc-title: Contents
+:toclevels: 3
+:sectnums:
+:icons: font
+:source-highlighter: highlight.js
+
+== Overview
+
+This service is an event-driven application built on top of https://nats.io[NATS], a lightweight, high-performance messaging system. The core abstraction is a **Blueprint** — a directed graph of communicating nodes that produce and consume events over NATS subjects.
+
+The application is structured around two primary runtime concepts:
+
+[cols="1,3"]
+|===
+| Concept | Description
+
+| **Blueprint**
+| A schema-level definition of a processing graph. Declares nodes and the edges between them. Never executes directly.
+
+| **Redprint**
+| An active, running instance of a Blueprint. Analogous to an object instantiated from a class.
+|===
+
+[TIP]
+====
+The Blueprint → Redprint relationship mirrors the **class → object** relationship in object-oriented programming.
+A Blueprint is the definition; a Redprint is the live execution of that definition.
+====
+
+== Core Concepts
+
+=== Blueprint
+
+A **Blueprint** defines a directed acyclic graph (DAG) of nodes. Each node is either a producer, a consumer, or both. The Blueprint itself is inert — it is a configuration schema describing _how_ nodes relate to one another, not a running process.
+
+When a Blueprint is authored, the developer declares:
+
+* The name of the Blueprint (e.g., `powell`)
+* Each node within the graph and its role (producer / consumer)
+* Which producer nodes each consumer node depends on
+
+.Example Blueprint definition (conceptual)
+[source,json]
+----
+{
+  "name": "powell",
+  "nodes": [
+    {
+      "name": "says_good_evening",
+      "role": "producer"
+    },
+    {
+      "name": "audience_responds",
+      "role": "consumer",
+      "subscribesTo": ["says_good_evening"]
+    }
+  ]
+}
+----
+
+=== Redprint
+
+When a user **dispatches** a Blueprint, the system resolves its dependency graph and instantiates a **Redprint** — a live, stateful execution of the Blueprint's node graph.
+
+During instantiation the runtime:
+
+1. Performs topological sort / graph dependency resolution on the node graph.
+2. Creates NATS subjects for every producer node.
+3. Wires each consumer node to subscribe to the appropriate NATS subject(s).
+4. Begins event processing.
+
+Multiple independent Redprints can be created from the same Blueprint, just as multiple objects can be instantiated from a single class.
+
+=== Nodes
+
+A **Node** is the fundamental unit of work in the system. Each node sits on the graph as either a source of events, a sink of events, or both.
+
+[cols="1,1,3"]
+|===
+| Role | Direction | Description
+
+| **Producer**
+| Outbound
+| Emits events onto a NATS subject after completing its work.
+
+| **Consumer**
+| Inbound
+| Subscribes to a NATS subject and waits for a `Positive` event before executing.
+
+| **Hybrid**
+| Both
+| Consumes from one or more upstream subjects and produces to its own subject upon success. This is the most common node type in a multi-step pipeline.
+|===
+
+==== The `Positive` Event
+
+Consumer nodes do not react to arbitrary messages. They wait specifically for a **`Positive`** event on their subscribed subject. A `Positive` event signals that the upstream producer has completed its work successfully and that the consumer may proceed.
+
+This makes the event contract explicit and binary: either a `Positive` is received and the consumer runs, or it does not.
+
+== NATS Subject Naming
+
+NATS subjects are derived deterministically from the Blueprint and node names. This makes subjects predictable, human-readable, and scoped to their Blueprint instance.
+
+=== Naming Convention
+
+[source]
+----
+<blueprint_name>.<producer_node_name>
+----
+
+=== Example
+
+Given a Blueprint named `powell` with a producer node named `says_good_evening`, the system creates the following NATS subject:
+
+[source]
+----
+powell.says_good_evening
+----
+
+Any consumer node declared as depending on `says_good_evening` will be wired to subscribe to `powell.says_good_evening` automatically during graph resolution.
+
+=== Subject Resolution Table
+
+[cols="1,1,2"]
+|===
+| Blueprint | Producer Node | Resolved NATS Subject
+
+| `powell`
+| `says_good_evening`
+| `powell.says_good_evening`
+
+| `powell`
+| `audience_responds`
+| `powell.audience_responds`
+
+| `pipeline_a`
+| `ingest`
+| `pipeline_a.ingest`
+
+| `pipeline_a`
+| `transform`
+| `pipeline_a.transform`
+|===
+
+== Architecture Diagram
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────────┐
+│  Blueprint: "powell"                                            │
+│                                                                 │
+│  ┌──────────────────────┐       ┌───────────────────────────┐  │
+│  │  Node: says_good_    │       │  Node: audience_responds  │  │
+│  │        evening       │       │                           │  │
+│  │  [Producer]          │       │  [Consumer]               │  │
+│  │                      │──────▶│  subscribesTo:            │  │
+│  │  Publishes to:       │ NATS  │  powell.says_good_evening │  │
+│  │  powell.says_good_   │       │                           │  │
+│  │  evening             │       │  Triggers on: Positive    │  │
+│  └──────────────────────┘       └───────────────────────────┘  │
+│                                                                 │
+│  ▼ dispatch()                                                   │
+└─────────────────────────────────────────────────────────────────┘
+
+         Blueprint (schema / class definition)
+                        │
+                        │  dispatch()
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Redprint: "powell" (live instance)                             │
+│                                                                 │
+│  Graph resolved → NATS subjects created → consumers wired      │
+│                                                                 │
+│  NATS subject: powell.says_good_evening                        │
+│       Producer emits ──▶ [Positive] ──▶ Consumer executes      │
+└─────────────────────────────────────────────────────────────────┘
+----
+
+== Graph Dependency Resolution
+
+When a Blueprint is dispatched, the runtime performs the following steps:
+
+1. **Parse** the Blueprint schema and build an in-memory directed graph.
+2. **Topological sort** the graph to determine a valid execution order (cycles are rejected at parse time).
+3. **Create NATS subjects** for each producer node using the `<blueprint>.<node>` naming scheme.
+4. **Subscribe consumers** to their declared upstream subjects, filtered to `Positive` events only.
+5. **Activate** the Redprint — producers can now begin emitting events.
+
+== Project Structure
+
+[source]
+----
+apps/api/
+├── src/
+│   └── index.ts        # Express server entry point
+├── dist/               # Compiled output (generated)
+├── package.json
+└── tsconfig.json
+----
+
+== Development
+
+=== Prerequisites
+
+* Node.js 22+
+* pnpm
+* A running NATS server (`nats-server`)
+
+=== Running Locally
+
+[source,bash]
+----
+# From the monorepo root
+pnpm dev --filter=api
+
+# Or from apps/api directly
+pnpm dev
+----
+
+The API server starts on `http://localhost:3001` by default. Set the `PORT` environment variable to override.
+
+=== Building
+
+[source,bash]
+----
+pnpm build
+----
+
+Compiled output is written to `dist/`.
