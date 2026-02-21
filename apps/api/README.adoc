@@ -100,6 +100,69 @@ Consumer nodes do not react to arbitrary messages. They wait specifically for a 
 
 This makes the event contract explicit and binary: either a `Positive` is received and the consumer runs, or it does not.
 
+=== Decision Node
+
+Every Blueprint schema **must** include exactly one **Decision Node**. This is the terminal node in the graph — it has no downstream consumers and represents the final action the system will take once all upstream nodes have resolved successfully.
+
+The Decision Node is distinguished from regular nodes by its association with a **verb** — a builtin market action drawn from a discrete, well-known set. The verb defines _what_ the system does at the end of the pipeline, and the Decision Node must also declare the **`market_id`** it operates on.
+
+==== Verbs
+
+Verbs are the standard vocabulary of actions available to a Decision Node. The supported verbs are:
+
+[cols="1,3"]
+|===
+| Verb | Effect
+
+| `buy`
+| Places a buy order on the specified market.
+
+| `sell`
+| Places a sell order on the specified market.
+|===
+
+Only one verb may be assigned per Decision Node. The verb and `market_id` together form the complete action specification that the Redprint will execute when the terminal `Positive` event is received.
+
+==== Schema Requirements
+
+A Blueprint schema is considered invalid and will be rejected at parse time if:
+
+* No Decision Node is declared.
+* More than one Decision Node is declared.
+* The Decision Node has no `verb` assigned.
+* The Decision Node has no `market_id` assigned.
+* The Decision Node is not reachable as a terminal node (i.e., it has outbound edges to other nodes).
+
+.Example Blueprint with a Decision Node
+[source,json]
+----
+{
+  "name": "powell",
+  "nodes": [
+    {
+      "name": "says_good_evening",
+      "role": "producer"
+    },
+    {
+      "name": "audience_responds",
+      "role": "consumer",
+      "subscribesTo": ["says_good_evening"]
+    },
+    {
+      "name": "decision",
+      "role": "decision",
+      "subscribesTo": ["audience_responds"],
+      "action": {
+        "verb": "buy",
+        "market_id": "FED-2024-DEC"
+      }
+    }
+  ]
+}
+----
+
+In this example, once `audience_responds` emits a `Positive`, the Decision Node fires its `buy` action against market `FED-2024-DEC`.
+
 == NATS Subject Naming
 
 NATS subjects are derived deterministically from the Blueprint and node names. This makes subjects predictable, human-readable, and scoped to their Blueprint instance.
@@ -149,34 +212,37 @@ Any consumer node declared as depending on `says_good_evening` will be wired to 
 
 [source]
 ----
-┌─────────────────────────────────────────────────────────────────┐
-│  Blueprint: "powell"                                            │
-│                                                                 │
-│  ┌──────────────────────┐       ┌───────────────────────────┐  │
-│  │  Node: says_good_    │       │  Node: audience_responds  │  │
-│  │        evening       │       │                           │  │
-│  │  [Producer]          │       │  [Consumer]               │  │
-│  │                      │──────▶│  subscribesTo:            │  │
-│  │  Publishes to:       │ NATS  │  powell.says_good_evening │  │
-│  │  powell.says_good_   │       │                           │  │
-│  │  evening             │       │  Triggers on: Positive    │  │
-│  └──────────────────────┘       └───────────────────────────┘  │
-│                                                                 │
-│  ▼ dispatch()                                                   │
-└─────────────────────────────────────────────────────────────────┘
-
          Blueprint (schema / class definition)
                         │
                         │  dispatch()
                         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Redprint: "powell" (live instance)                             │
-│                                                                 │
-│  Graph resolved → NATS subjects created → consumers wired      │
-│                                                                 │
-│  NATS subject: powell.says_good_evening                        │
-│       Producer emits ──▶ [Positive] ──▶ Consumer executes      │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Redprint: "powell" (live instance)                                 │
+│                                                                     │
+│  ┌─────────────────────┐   [Positive]   ┌──────────────────────┐   │
+│  │  says_good_evening  │───────────────▶│  audience_responds   │   │
+│  │  [Producer]         │                │  [Consumer/Producer] │   │
+│  │                     │  NATS subject: │                      │   │
+│  │  powell.says_good_  │  powell.says_  │  powell.audience_    │   │
+│  │  evening            │  good_evening  │  responds            │   │
+│  └─────────────────────┘                └──────────┬───────────┘   │
+│                                                    │               │
+│                                         [Positive] │               │
+│                                  NATS subject:     │               │
+│                                  powell.audience_  │               │
+│                                  responds          │               │
+│                                                    ▼               │
+│                                         ┌──────────────────────┐   │
+│                                         │  decision            │   │
+│                                         │  [Decision Node]     │   │
+│                                         │                      │   │
+│                                         │  verb:    buy        │   │
+│                                         │  market:  FED-2024   │   │
+│                                         └──────────────────────┘   │
+│                                                    │               │
+│                                                    ▼               │
+│                                            ◀ Market Action ▶       │
+└─────────────────────────────────────────────────────────────────────┘
 ----
 
 == Graph Dependency Resolution
@@ -184,10 +250,12 @@ Any consumer node declared as depending on `says_good_evening` will be wired to 
 When a Blueprint is dispatched, the runtime performs the following steps:
 
 1. **Parse** the Blueprint schema and build an in-memory directed graph.
-2. **Topological sort** the graph to determine a valid execution order (cycles are rejected at parse time).
-3. **Create NATS subjects** for each producer node using the `<blueprint>.<node>` naming scheme.
-4. **Subscribe consumers** to their declared upstream subjects, filtered to `Positive` events only.
-5. **Activate** the Redprint — producers can now begin emitting events.
+2. **Validate** the graph: reject if no Decision Node is present, if multiple Decision Nodes are found, or if the Decision Node lacks a `verb` or `market_id`.
+3. **Topological sort** the graph to determine a valid execution order (cycles are rejected at this stage).
+4. **Create NATS subjects** for each producer node using the `<blueprint>.<node>` naming scheme.
+5. **Subscribe consumers** to their declared upstream subjects, filtered to `Positive` events only.
+6. **Wire the Decision Node** to subscribe to its upstream subject and bind its configured market action.
+7. **Activate** the Redprint — producers can now begin emitting events. When the Decision Node receives its `Positive`, the market action fires.
 
 == Project Structure
 
