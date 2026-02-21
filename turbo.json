@@ -1,12 +1,13 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
-  "globalPassThroughEnv": ["PORT"],
+  "globalPassThroughEnv": ["PORT", "CONVEX_DEPLOY_KEY"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": ["CONVEX_URL", "NEXT_PUBLIC_CONVEX_URL"]
     },
     "transit": {
       "dependsOn": ["^transit"]
