@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-browser": {
+      "source": "vercel-labs/agent-browser",
+      "sourceType": "github",
+      "computedHash": "69e805b9bba58a76e3f9ac835d506a4f06f18a7867d2ba5e23e40638f6f351eb"
+    },
+    "avoid-feature-creep": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "e63392840c3a80cbd9ec7b27888bf8d433b09bf6c9077ee3a6f882668057a390"
+    },
+    "convex": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "de7a20d081cd19bf8bce4038bd62d038a0a88f218f85afb35320d09b052fb534"
+    },
+    "convex-agents": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "3054123dedc1b7ded9b6404c6c641023683fe509103fe7dc148acda831d53d36"
+    },
+    "convex-best-practices": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "3b24d2afbb5859e3a3640c1e47e2ac9ace81e9737ec76b891951999361c92ab1"
+    },
+    "convex-component-authoring": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "dbb84d8c1996d9054958f07e67502ece523c49ff957bb3109397a6595e44f4ed"
+    },
+    "convex-cron-jobs": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "e786347f192c02a97e703b41cb2d8727346092b7112a1c86da9fbe982247962e"
+    },
+    "convex-file-storage": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "a541556841d1a907059f73ef4a428a4655b3355baf160e5c0aca1cac86054c0b"
+    },
+    "convex-functions": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "a08fd9695ad0558ec12a312136d6a1483df04fcb5548207a99ce7d14c0df251a"
+    },
+    "convex-http-actions": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "c189703dd5d91f280b53d6bd903bf8313e935b1edab136bb7ffdb6c1512b95aa"
+    },
+    "convex-migrations": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "869a862d35e7fb024d244830b0968e231f8ff99fefa0f879270e13e14c4934fe"
+    },
+    "convex-realtime": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "aa08a2856778c09aa8c0f5eef431fc102115e04461d7d3f86e6ce97b5848b52f"
+    },
+    "convex-schema-validator": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "97b7965f2bc665f1848196813c79e32bff2d8b58b3a701b313c4a96f0bf5ac95"
+    },
+    "convex-security-audit": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "a1468190e59af7e8a8352dd6d3707f0b5a19659e3f4503042c6be0a91cbb3916"
+    },
+    "convex-security-check": {
+      "source": "waynesutton/convexskills",
+      "sourceType": "github",
+      "computedHash": "b53e061304bb81d037c6dd4e38762d27a596523bcbeab43c58e0b05140449802"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "063a0e6448123cd359ad0044cc46b0e490cc7964d45ef4bb9fd842bd2ffbca67"
+    },
+    "polymarket-prediction-market": {
+      "source": "axwelbrand-byte/arbibot",
+      "sourceType": "github",
+      "computedHash": "a6ae5575796714f8e7425571aff31e6a052f7eea91ed04cd2d400d5a25d3873c"
+    },
+    "vercel-composition-patterns": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "f98931159fa9c7fed043bcd18a891a46dcf89ababa38df13a4c5b7b30dc0ce07"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "4365be772fd3b41994a72ad478472c6d680678e7f3859860ab010e9c46e48ee0"
+    },
+    "vercel-react-native-skills": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "2e9088a7333666d8c2833b8ff58bd51b955501c42b4c7244f72b4cbf22dafcc4"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "a6a44d5498f7e8f68289902f3dedfc6f38ae0cee1e96527c80724cf27f727c2a"
+    }
+  }
+}
