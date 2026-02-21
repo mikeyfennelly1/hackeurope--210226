@@ -86,6 +86,11 @@
       "sourceType": "github",
       "computedHash": "a6ae5575796714f8e7425571aff31e6a052f7eea91ed04cd2d400d5a25d3873c"
     },
+    "turborepo": {
+      "source": "vercel/turborepo",
+      "sourceType": "github",
+      "computedHash": "f343282e8b1cdfbf28b0b3ba1715040753522538acdc4faa16372b8a0a14f2a1"
+    },
     "vercel-composition-patterns": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
