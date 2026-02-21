@@ -3,7 +3,7 @@ import type {
   NodeDefinition,
   ValidationError,
   ValidationResult,
-} from "./types";
+} from "./types.js";
 
 function ok(): ValidationResult {
   return { valid: true, errors: [] };
@@ -137,6 +137,27 @@ export const BlueprintUtils = {
           path: "nodes",
           message: `Decision node "${decision.name}" must subscribe to at least one other node`,
         });
+      }
+
+      // 6. Decision node must have an action with verb and market_id
+      if (!decision.action) {
+        errors.push({
+          path: `nodes`,
+          message: `Decision node "${decision.name}" must have an action`,
+        });
+      } else {
+        if (!decision.action.verb) {
+          errors.push({
+            path: `nodes`,
+            message: `Decision node "${decision.name}" action must have a verb`,
+          });
+        }
+        if (!decision.action.market_id) {
+          errors.push({
+            path: `nodes`,
+            message: `Decision node "${decision.name}" action must have a market_id`,
+          });
+        }
       }
     }
 

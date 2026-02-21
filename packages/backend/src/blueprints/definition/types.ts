@@ -2,11 +2,17 @@ export type NodeRole = "producer" | "consumer" | "hybrid" | "decision";
 
 export type Decision = "buy" | "sell";
 
+export interface NodeAction {
+  readonly verb: Decision;
+  readonly market_id: string;
+}
+
 export interface NodeDefinition {
   readonly name: string;
   readonly role: NodeRole;
   readonly subscribesTo?: readonly string[];
-  readonly decide?: (inputs: Record<string, unknown>) => Decision;
+  /** Required for decision nodes. Declares the market action to execute. */
+  readonly action?: NodeAction;
 }
 
 export interface BlueprintDefinition {

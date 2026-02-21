@@ -1,5 +1,5 @@
-import type { BlueprintDefinition, NodeDefinition } from "./types";
-import { BlueprintUtils } from "./validate";
+import type { BlueprintDefinition, NodeDefinition } from "./types.js";
+import { BlueprintUtils } from "./validate.js";
 
 export class BlueprintBuilder {
   private readonly name: string;
