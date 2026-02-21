@@ -90,15 +90,100 @@ const blueprintInputSchema = z.object({
 });
 
 export type BlueprintToolParams = z.infer<typeof blueprintInputSchema>;
+export type AddNodeParams = z.infer<typeof nodeSchema>;
+export type AddEdgeParams = z.infer<typeof edgeSchema>;
+
+// ─── Update node schema (all fields optional except id) ─────────
+const updateNodeSchema = z.object({
+  id: z.string().describe("The id of the node to update"),
+  label: z.string().optional().describe("New display label"),
+  inputs: z.array(z.string()).optional().describe("New input topics"),
+  outputs: z.array(z.string()).optional().describe("New output topics or branch names"),
+  action: z
+    .object({
+      verb: z.enum(["buy", "sell"]),
+      market_id: z.string(),
+    })
+    .optional()
+    .describe("Updated action for decision nodes"),
+  inputType: z
+    .enum(["manual_trigger", "crypto_monitor"])
+    .optional()
+    .describe("Change the input node subtype"),
+  cryptoMonitorConfig: z
+    .object({
+      symbol: z.string(),
+      condition: z.enum(["drops_below", "rises_above"]),
+      targetPrice: z.number(),
+    })
+    .optional()
+    .describe("Updated crypto monitor configuration"),
+});
+
+export type UpdateNodeParams = z.infer<typeof updateNodeSchema>;
 
 // ─── Tool definitions ───────────────────────────────────────────
 export const blueprintTools = {
   create_blueprint: tool({
     description:
       "Create a complete blueprint with nodes and edges. " +
+      "Use this when the user wants a brand-new blueprint from scratch. " +
       "Node positions are auto-computed — do not include position data. " +
       "There must be exactly one decision node with an action (verb + market_id). " +
       "Every edge from a decision node must include a sourceHandle matching one of its branch names.",
     inputSchema: blueprintInputSchema,
+  }),
+
+  add_node: tool({
+    description:
+      "Add a single node to the current blueprint. " +
+      "Use this when the user wants to add a new node without recreating the whole blueprint. " +
+      "The node will be auto-positioned on the canvas.",
+    inputSchema: nodeSchema,
+  }),
+
+  update_node: tool({
+    description:
+      "Update properties of an existing node in the current blueprint. " +
+      "Only include fields that need to change — omitted fields stay the same. " +
+      "The `id` field is required to identify which node to update.",
+    inputSchema: updateNodeSchema,
+  }),
+
+  delete_node: tool({
+    description:
+      "Delete a node from the current blueprint by its id. " +
+      "All edges connected to the node are also removed.",
+    inputSchema: z.object({
+      id: z.string().describe("The id of the node to delete"),
+    }),
+  }),
+
+  add_edge: tool({
+    description:
+      "Add an edge (connection) between two nodes in the current blueprint. " +
+      "For edges from a decision node, `sourceHandle` is required and must match a branch name.",
+    inputSchema: edgeSchema,
+  }),
+
+  delete_edge: tool({
+    description:
+      "Delete an edge from the current blueprint. Specify the source and target node ids " +
+      "(and optionally sourceHandle for decision nodes) to identify which edge to remove.",
+    inputSchema: z.object({
+      source: z.string().describe("Source node id of the edge to delete"),
+      target: z.string().describe("Target node id of the edge to delete"),
+      sourceHandle: z
+        .string()
+        .optional()
+        .describe("Source handle to disambiguate when multiple edges exist between the same nodes"),
+    }),
+  }),
+
+  rename_blueprint: tool({
+    description: "Rename the current blueprint.",
+    inputSchema: z.object({
+      name: z.string().describe("The new name for the blueprint"),
+    }),
   }),
 };

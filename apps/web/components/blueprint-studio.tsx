@@ -74,7 +74,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { BlueprintChat } from "@/components/blueprint-chat";
+import { BlueprintChat, type BlueprintEditCallbacks } from "@/components/blueprint-chat";
+import type { AddNodeParams, UpdateNodeParams, AddEdgeParams } from "@/lib/blueprint-tools";
 import { computeLayout, GRID_SIZE } from "@/lib/auto-layout";
 
 const STORAGE_KEY = "blueprints:v1";
@@ -1216,6 +1217,149 @@ function BlueprintStudioInner() {
     [blueprints, fitView],
   );
 
+  const handleChatAddNode = useCallback(
+    (params: AddNodeParams) => {
+      const nodeType: FlowNodeType =
+        params.type === "input"
+          ? "inputNode"
+          : params.type === "decision"
+            ? "decisionNode"
+            : "outputNode";
+
+      const isCrypto =
+        params.type === "input" && "inputType" in params && params.inputType === "crypto_monitor";
+
+      const node: Node<FlowNodeData, FlowNodeType> = {
+        id: params.id,
+        type: nodeType,
+        position: { x: 0, y: 0 }, // will be auto-laid out
+        data: {
+          label: params.label,
+          inputs: "inputs" in params ? params.inputs : [],
+          outputs: "outputs" in params ? params.outputs : [],
+          ...("action" in params && params.action ? { action: params.action } : {}),
+          ...("inputType" in params && params.inputType
+            ? { inputType: params.inputType }
+            : {}),
+          ...(isCrypto && "cryptoMonitorConfig" in params && params.cryptoMonitorConfig
+            ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
+            : {}),
+        },
+      };
+
+      const nextNodes = [...nodesRef.current, node];
+      // Auto-layout all nodes when a new one is added at (0,0)
+      const laid = computeLayout(nextNodes, edgesRef.current);
+      setNodes(laid);
+      nodesRef.current = laid;
+      persistRef.current(laid, edgesRef.current);
+      requestAnimationFrame(() => {
+        fitView({ duration: 260, padding: 0.24 });
+      });
+    },
+    [fitView],
+  );
+
+  const handleChatUpdateNode = useCallback((params: UpdateNodeParams) => {
+    const nextNodes = nodesRef.current.map((node) => {
+      if (node.id !== params.id) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          ...(params.label !== undefined ? { label: params.label } : {}),
+          ...(params.inputs !== undefined ? { inputs: params.inputs } : {}),
+          ...(params.outputs !== undefined ? { outputs: params.outputs } : {}),
+          ...(params.action !== undefined ? { action: params.action } : {}),
+          ...(params.inputType !== undefined ? { inputType: params.inputType } : {}),
+          ...(params.cryptoMonitorConfig !== undefined
+            ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
+            : {}),
+        },
+      };
+    });
+    setNodes(nextNodes);
+    nodesRef.current = nextNodes;
+    updateNodeInternals(params.id);
+    persistRef.current(nextNodes, edgesRef.current);
+  }, [updateNodeInternals]);
+
+  const handleChatDeleteNode = useCallback((id: string) => {
+    const nextNodes = nodesRef.current.filter((n) => n.id !== id);
+    const nextEdges = edgesRef.current.filter(
+      (e) => e.source !== id && e.target !== id,
+    );
+    if (selectedNodeId === id) setSelectedNodeId(null);
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    persistRef.current(nextNodes, nextEdges);
+  }, [selectedNodeId]);
+
+  const handleChatAddEdge = useCallback((params: AddEdgeParams) => {
+    const edge: Edge = {
+      id: `edge-${params.source}-${params.target}-${Date.now()}`,
+      source: params.source,
+      target: params.target,
+      ...(params.sourceHandle ? { sourceHandle: params.sourceHandle } : {}),
+      type: "smoothstep",
+    };
+    const nextEdges = addEdge(edge, edgesRef.current);
+    setEdges(nextEdges);
+    edgesRef.current = nextEdges;
+    persistRef.current(nodesRef.current, nextEdges);
+  }, []);
+
+  const handleChatDeleteEdge = useCallback(
+    (source: string, target: string, sourceHandle?: string) => {
+      const nextEdges = edgesRef.current.filter((e) => {
+        if (e.source !== source || e.target !== target) return true;
+        if (sourceHandle && e.sourceHandle !== sourceHandle) return true;
+        return false;
+      });
+      setEdges(nextEdges);
+      edgesRef.current = nextEdges;
+      persistRef.current(nodesRef.current, nextEdges);
+    },
+    [],
+  );
+
+  const renameBlueprint = useCallback(
+    (name: string) => {
+      if (!selectedBlueprint) return;
+      const next = blueprints.map((blueprint) =>
+        blueprint.id === selectedBlueprint.id
+          ? { ...blueprint, name }
+          : blueprint,
+      );
+      setBlueprints(next);
+      saveBlueprints(next);
+    },
+    [selectedBlueprint, blueprints],
+  );
+
+  const chatCallbacks = useMemo<BlueprintEditCallbacks>(
+    () => ({
+      onBlueprintGenerated: handleBlueprintFromChat,
+      onAddNode: handleChatAddNode,
+      onUpdateNode: handleChatUpdateNode,
+      onDeleteNode: handleChatDeleteNode,
+      onAddEdge: handleChatAddEdge,
+      onDeleteEdge: handleChatDeleteEdge,
+      onRenameBlueprint: renameBlueprint,
+    }),
+    [
+      handleBlueprintFromChat,
+      handleChatAddNode,
+      handleChatUpdateNode,
+      handleChatDeleteNode,
+      handleChatAddEdge,
+      handleChatDeleteEdge,
+      renameBlueprint,
+    ],
+  );
+
   const confirmDeleteBlueprint = () => {
     if (!deletingBlueprintId) return;
     const next = blueprints.filter((blueprint) => blueprint.id !== deletingBlueprintId);
@@ -1225,20 +1369,6 @@ function BlueprintStudioInner() {
     }
     saveBlueprints(next);
     setDeletingBlueprintId(null);
-  };
-
-  const renameBlueprint = (name: string) => {
-    if (!selectedBlueprint) return;
-    const next = blueprints.map((blueprint) =>
-      blueprint.id === selectedBlueprint.id
-        ? {
-            ...blueprint,
-            name,
-          }
-        : blueprint,
-    );
-    setBlueprints(next);
-    saveBlueprints(next);
   };
 
   const nodeTypes = useMemo(
@@ -1692,9 +1822,10 @@ function BlueprintStudioInner() {
       <BlueprintChat
         key={selectedBlueprintId}
         blueprintId={selectedBlueprintId}
+        currentBlueprint={selectedBlueprint}
         open={chatOpen}
         onClose={() => setChatOpen(false)}
-        onBlueprintGenerated={handleBlueprintFromChat}
+        callbacks={chatCallbacks}
       />
 
       <AlertDialog
