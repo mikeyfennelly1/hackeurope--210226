@@ -36,6 +36,7 @@ import {
   ChevronRight,
   GitBranch,
   Loader2,
+  MessageCircle,
   Play,
   Plus,
   Square,
@@ -47,6 +48,8 @@ import "@xyflow/react/dist/style.css";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { BlueprintChat } from "@/components/blueprint-chat";
+import { computeLayout, GRID_SIZE } from "@/lib/auto-layout";
 
 const STORAGE_KEY = "blueprints:v1";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -168,28 +171,34 @@ function blueprintToFlow(blueprint: Blueprint): {
   nodes: Node<FlowNodeData, FlowNodeType>[];
   edges: Edge[];
 } {
-  return {
-    nodes: blueprint.nodes.map((node) => ({
-      id: node.id,
-      type: toFlowNodeType(node.type),
-      position: node.position,
-      data: {
-        label: node.label,
-        inputs: [...node.inputs],
-        outputs: [...node.outputs],
-        action: node.action,
-      },
-    })),
-    edges: blueprint.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle,
-      type: "smoothstep",
-      animated: false,
-    })),
-  };
+  const nodes: Node<FlowNodeData, FlowNodeType>[] = blueprint.nodes.map((node) => ({
+    id: node.id,
+    type: toFlowNodeType(node.type),
+    position: node.position,
+    data: {
+      label: node.label,
+      inputs: [...node.inputs],
+      outputs: [...node.outputs],
+      action: node.action,
+    },
+  }));
+
+  const edges: Edge[] = blueprint.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+    type: "smoothstep",
+    animated: false,
+  }));
+
+  // Auto-layout when all nodes sit at (0,0) — e.g. AI-generated blueprints
+  const needsLayout =
+    nodes.length > 1 &&
+    nodes.every((n) => n.position.x === 0 && n.position.y === 0);
+
+  return { nodes: needsLayout ? computeLayout(nodes, edges) : nodes, edges };
 }
 
 function flowToBlueprint(
@@ -636,6 +645,7 @@ function BlueprintStudioInner() {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [activeRedprint, setActiveRedprint] = useState<RedprintJSON | null>(null);
   const [dispatching, setDispatching] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
@@ -1001,6 +1011,19 @@ function BlueprintStudioInner() {
     saveBlueprints(next);
   };
 
+  const handleBlueprintFromChat = useCallback(
+    (blueprint: Blueprint) => {
+      const next = [...blueprints, blueprint];
+      setBlueprints(next);
+      setSelectedBlueprintId(blueprint.id);
+      saveBlueprints(next);
+      requestAnimationFrame(() => {
+        fitView({ duration: 260, padding: 0.24 });
+      });
+    },
+    [blueprints, fitView],
+  );
+
   const deleteBlueprint = (id: string) => {
     if (blueprints.length === 1) return;
     const next = blueprints.filter((blueprint) => blueprint.id !== id);
@@ -1186,7 +1209,30 @@ function BlueprintStudioInner() {
             >
               Recenter Graph
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const laid = computeLayout(nodes, edges);
+                setNodes(laid);
+                requestAnimationFrame(() => {
+                  fitView({ duration: 260, padding: 0.24 });
+                });
+              }}
+            >
+              Auto Layout
+            </Button>
           </div>
+        </div>
+
+        <div className="mt-6 border-t border-white/10 pt-4">
+          <Button
+            className="w-full"
+            variant={chatOpen ? "default" : "secondary"}
+            onClick={() => setChatOpen((prev) => !prev)}
+          >
+            <MessageCircle className="size-4" />
+            {chatOpen ? "Close AI Chat" : "AI Blueprint Chat"}
+          </Button>
         </div>
 
       </aside>
@@ -1249,9 +1295,11 @@ function BlueprintStudioInner() {
             }}
             panOnScroll
             zoomOnScroll={false}
+            snapToGrid
+            snapGrid={[GRID_SIZE, GRID_SIZE]}
             fitView
           >
-            <Background color="rgba(255,255,255,0.06)" gap={22} />
+            <Background color="rgba(255,255,255,0.06)" gap={GRID_SIZE} />
             <Controls />
           </ReactFlow>
           {selectedNode && (
@@ -1352,6 +1400,14 @@ function BlueprintStudioInner() {
           </Button>
         </aside>
       )}
+
+      <BlueprintChat
+        key={selectedBlueprintId}
+        blueprintId={selectedBlueprintId}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        onBlueprintGenerated={handleBlueprintFromChat}
+      />
     </div>
   );
 }
