@@ -1,7 +1,17 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
-  "globalPassThroughEnv": ["PORT", "CONVEX_DEPLOY_KEY"],
+  "globalPassThroughEnv": [
+    "PORT",
+    "CONVEX_DEPLOY_KEY",
+    "POLYMARKET_PRIVATE_KEY",
+    "POLYMARKET_API_KEY",
+    "POLYMARKET_API_SECRET",
+    "POLYMARKET_API_PASSPHRASE",
+    "POLYMARKET_CHAIN_ID",
+    "POLYMARKET_CLOB_HOST",
+    "NODE_ENV"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
