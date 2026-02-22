@@ -285,4 +285,13 @@ export const blueprintTools = {
         .describe("Search query, e.g. 'Trump', 'Bitcoin', 'Fed rate'"),
     }),
   }),
+
+  validate_blueprint: tool({
+    description:
+      "Validate the current blueprint and check for errors. " +
+      "You MUST call this after making any edits (add_node, update_node, delete_node, add_edge, delete_edge) to verify the blueprint is valid and runnable. " +
+      "If there are errors, fix them using edit tools and then call validate_blueprint again. " +
+      "Do NOT respond to the user until validation passes with zero errors.",
+    inputSchema: z.object({}),
+  }),
 };

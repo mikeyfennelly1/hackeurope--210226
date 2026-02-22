@@ -2879,15 +2879,35 @@ function BlueprintStudioInner() {
 
   const handleBlueprintFromChat = useCallback(
     (blueprint: Blueprint) => {
-      const next = [...blueprints, blueprint];
-      setBlueprints(next);
-      setSelectedBlueprintId(blueprint.id);
-      saveBlueprints(next);
+      if (selectedBlueprintId) {
+        // Replace the current blueprint's content but keep the same ID
+        // so the chat session (keyed by blueprintId) persists and the
+        // AI validation feedback loop can continue in the same context.
+        const updated = { ...blueprint, id: selectedBlueprintId };
+        const next = blueprints.map((bp) =>
+          bp.id === selectedBlueprintId ? updated : bp,
+        );
+        setBlueprints(next);
+        saveBlueprints(next);
+        // Manually sync canvas since selectedBlueprintId didn't change
+        const flow = blueprintToFlow(updated);
+        setNodes(flow.nodes);
+        setEdges(flow.edges);
+        const result = BlueprintUtils.validate(updated);
+        setValidationErrors(result.errors);
+        setStatus(result.valid ? "saved" : "invalid");
+      } else {
+        // No blueprint selected — add as new
+        const next = [...blueprints, blueprint];
+        setBlueprints(next);
+        setSelectedBlueprintId(blueprint.id);
+        saveBlueprints(next);
+      }
       requestAnimationFrame(() => {
         fitView({ duration: 260, padding: 0.24 });
       });
     },
-    [blueprints, fitView],
+    [selectedBlueprintId, blueprints, fitView],
   );
 
   const handleChatAddNode = useCallback(

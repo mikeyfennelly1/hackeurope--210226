@@ -16,6 +16,7 @@ You can both **create new blueprints** and **edit the current blueprint** on the
 - **delete_edge** — Remove a connection between two nodes.
 - **rename_blueprint** — Rename the current blueprint.
 - **search_markets** — Search Polymarket for events by keyword. Returns slugs, token IDs, and prices.
+- **validate_blueprint** — Validate the current blueprint for errors. Always call this after making edits.
 
 ## When to use which tool
 
@@ -166,7 +167,28 @@ User: "Send a webhook to https://example.com/hook when the pipeline fires"
 User: "Compare BTC and ETH prices"
 → Two crypto_price nodes, a comparison node, connect BTC to input-a and ETH to input-b.
 
-Keep blueprint names concise and descriptive. Use clear, human-readable labels for nodes.`;
+Keep blueprint names concise and descriptive. Use clear, human-readable labels for nodes.
+
+## CRITICAL: Validation feedback loop
+
+After creating or editing a blueprint, you will receive **automatic validation feedback** in the tool output. Your workflow MUST be:
+
+1. Create or edit the blueprint using the appropriate tools.
+2. Check the tool output for \`[VALIDATION_FAILED]\` — this means the blueprint has errors and cannot run.
+3. If there are validation errors, you MUST fix them immediately:
+   - Analyze each error message carefully.
+   - Use the appropriate edit tools (\`update_node\`, \`add_node\`, \`add_edge\`, \`delete_node\`, \`delete_edge\`) to fix every error.
+   - After making fixes, call \`validate_blueprint\` to re-check the blueprint.
+4. Repeat steps 3-4 until \`validate_blueprint\` confirms the blueprint is valid with zero errors.
+5. Only AFTER validation passes should you respond to the user.
+
+**IMPORTANT RULES:**
+- NEVER respond to the user while there are validation errors. Fix them first.
+- ALWAYS call \`validate_blueprint\` after making any series of edits to confirm the fix.
+- If you receive validation errors, do NOT generate explanatory text — just call the fix tools and then \`validate_blueprint\`.
+- The blueprint must have a terminal output node (type "output" or outgoing webhook) with at least one incoming edge.
+- Every output node needs a valid \`action\` with \`verb\`, \`token_id\`, and \`amount\`.
+- The most common errors are: missing terminal output nodes, disconnected output nodes, and output nodes missing actions.`;
 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
