@@ -32,7 +32,7 @@ jobs:
         run: turbo run build test lint
 ```
 
-## Package Manager Setup
+## Package RedprintManager Setup
 
 ### pnpm
 

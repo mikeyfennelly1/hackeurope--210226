@@ -1,0 +1,20 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "Hackeurope API",
+  "entryPoints": ["src"],
+  "entryPointStrategy": "expand",
+  "out": "docs",
+  "tsconfig": "./tsconfig.json",
+  "includeVersion": true,
+  "readme": "none",
+  "skipErrorChecking": true,
+  "logLevel": "Warn",
+  "externalSymbolLinkMappings": {
+    "@repo/backend": {
+      "BlueprintDefinition": "#",
+      "NodeDefinition": "#",
+      "Redprint": "#",
+      "BinancePriceMonitor": "#"
+    }
+  }
+}

@@ -31,6 +31,18 @@
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "dev:trace": {
+      "cache": false,
+      "persistent": true
+    },
+    "docs:build": {
+      "dependsOn": ["^build"],
+      "outputs": ["docs/**"]
+    },
+    "docs:dev": {
+      "cache": false,
+      "persistent": true
     }
   }
 }

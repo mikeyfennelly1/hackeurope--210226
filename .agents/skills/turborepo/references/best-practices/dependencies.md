@@ -134,7 +134,7 @@ npx @manypkg/cli fix
 npx sherif
 ```
 
-### Option 2: Package Manager Commands
+### Option 2: Package RedprintManager Commands
 
 ```bash
 # pnpm - Update everywhere

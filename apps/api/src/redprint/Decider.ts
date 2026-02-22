@@ -34,6 +34,7 @@ export class Decider {
   }
 
   executeAction(): void {
+    logger.debug(`Action payload: ${JSON.stringify(this.action)}`);
     logger.info(`Executing action: ${this.action.verb} on token ${this.action.token_id}`);
   }
 }

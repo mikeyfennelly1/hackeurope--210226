@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { connectNats } from "./redprint/nats.js";
-import { redprintRouter } from "./redprint/routes.js";
+import { redprintRouter } from "./redprint/RedprintRoutes.js";
 import { polymarketRoutes } from "./routes/index.js";
 import { errorHandler } from "./middleware/index.js";
 import { getLogger } from "./utils/logger.js";
