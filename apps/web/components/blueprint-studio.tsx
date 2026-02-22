@@ -1009,6 +1009,7 @@ function BlueprintStudioInner() {
   const { screenToFlowPosition, fitView } = useReactFlow();
 
   const skipNextPaneClickRef = useRef(false);
+  const isDraggingNodeRef = useRef(false);
 
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -1089,9 +1090,13 @@ function BlueprintStudioInner() {
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<FlowNodeData, FlowNodeType>>[]) => {
       // Ignore changes to the phantom node
-      const filtered = changes.filter(
+      let filtered = changes.filter(
         (c) => !("id" in c && c.id === PHANTOM_NODE_ID),
       );
+      // Suppress selection changes while dragging (prevents re-select after drop)
+      if (isDraggingNodeRef.current) {
+        filtered = filtered.filter((c) => c.type !== "select");
+      }
       if (filtered.length === 0) return;
       const next = applyNodeChanges(filtered, nodesRef.current);
       setNodes(next);
@@ -1755,7 +1760,23 @@ function BlueprintStudioInner() {
             onConnectEnd={onConnectEnd}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onNodeDragStart={() => {
+              isDraggingNodeRef.current = true;
+            }}
+            onNodeDragStop={(_event, node) => {
+              setTimeout(() => {
+                setSelectedNodeId(null);
+                // Clear React Flow's internal selected state on the dragged node
+                setNodes((nds) =>
+                  nds.map((n) =>
+                    n.id === node.id ? { ...n, selected: false } : n,
+                  ),
+                );
+                isDraggingNodeRef.current = false;
+              }, 50);
+            }}
             onNodeClick={(_event, node) => {
+              if (isDraggingNodeRef.current) return;
               setSelectedNodeId(node.id);
               setContextMenu(null);
             }}
