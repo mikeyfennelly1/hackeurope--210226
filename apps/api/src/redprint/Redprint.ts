@@ -42,17 +42,23 @@ export class RedPrint {
     );
 
     const decisionNode = blueprint.nodes.find((n) => n.role === "decision");
-    if (!decisionNode?.action) {
-      throw new Error(`Blueprint "${blueprint.name}" has no decision node with an action`);
+    if (!decisionNode) {
+      throw new Error(`Blueprint "${blueprint.name}" has no decision node`);
+    }
+
+    // Action now lives on consumer (output) nodes
+    const consumerNode = blueprint.nodes.find((n) => n.role === "consumer" && n.action);
+    if (!consumerNode?.action) {
+      throw new Error(`Blueprint "${blueprint.name}" has no consumer node with an action`);
     }
 
     const producerNodes = blueprint.nodes.filter((n) => n.role === "producer");
     this.decisionBuffer = new DecisionBuffer(producerNodes.map((n) => n.name));
 
     const requiredState = new Map(
-      (decisionNode.subscribesTo ?? []).map((dep) => [dep.node, dep.requiredValue] as const),
+      (decisionNode.subscribesTo ?? []).map((dep) => [dep, true] as const),
     );
-    this.decider = new Decider(requiredState, decisionNode.action);
+    this.decider = new Decider(requiredState, consumerNode.action);
 
     this.logger.info(
       `Instantiated from blueprint "${blueprint.name}" with ${blueprint.nodes.length} node(s)`,

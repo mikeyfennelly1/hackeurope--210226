@@ -94,7 +94,7 @@ export type FlowNodeData = {
   label: string;
   inputs: string[];
   outputs: string[];
-  action?: { verb: Decision; market_id: string };
+  action?: { verb: Decision; token_id: string; amount: number };
   hasError?: boolean;
   inputType?: InputNodeType;
   cryptoMonitorConfig?: CryptoMonitorConfig;
@@ -118,7 +118,7 @@ type RedprintJSON = {
   name: string;
   status: string;
   nodes: RedprintNodeState[];
-  decision?: { verb: string; market_id: string } | null;
+  decision?: { verb: string; token_id: string } | null;
   createdAt: string;
 };
 
@@ -127,7 +127,7 @@ type ApiRedprintResponse = {
   blueprintName: string;
   status: string;
   nodes: Record<string, { label?: string; role: string; status: string; output: unknown; firedAt: string | null; inputType?: string; lastPrice?: number }>;
-  decision: { verb: string; market_id: string } | null;
+  decision: { verb: string; token_id: string } | null;
   createdAt: string;
 };
 
@@ -179,7 +179,6 @@ function createStarterBlueprint(name: string): Blueprint {
       position: { x: 400, y: 220 },
       inputs: ["topic.orders"],
       outputs: ["approved", "rejected"],
-      action: { verb: "buy", market_id: "" },
     })
     .addNode({
       id: "output-1",
@@ -188,6 +187,7 @@ function createStarterBlueprint(name: string): Blueprint {
       position: { x: 760, y: 240 },
       inputs: ["topic.orders"],
       outputs: [],
+      action: { verb: "buy", token_id: "", amount: 0 },
     })
     .addEdge({ id: "edge-1", source: "input-1", target: "decision-1" })
     .addEdge({ id: "edge-2", source: "decision-1", target: "output-1", sourceHandle: "approved" })
@@ -244,7 +244,6 @@ function blueprintToFlow(blueprint: Blueprint): {
     animated: false,
   }));
 
-  // Auto-layout when all nodes sit at (0,0) — e.g. AI-generated blueprints
   const needsLayout =
     nodes.length > 1 &&
     nodes.every((n) => n.position.x === 0 && n.position.y === 0);
@@ -331,13 +330,11 @@ function BaseNode({
 }) {
   return (
     <div className="relative min-w-[220px] border border-white/20 bg-[#111314] font-[family-name:var(--font-geist-mono)] shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
-      {/* Corner brackets — orange, indicate selection */}
       <div className={`absolute h-3 w-3 border-l border-t border-[#d4602c] transition-all ${selected ? "-left-1.5 -top-1.5" : "-left-px -top-px"}`} />
       <div className={`absolute h-3 w-3 border-r border-t border-[#d4602c] transition-all ${selected ? "-right-1.5 -top-1.5" : "-right-px -top-px"}`} />
       <div className={`absolute h-3 w-3 border-b border-l border-[#d4602c] transition-all ${selected ? "-bottom-1.5 -left-1.5" : "-bottom-px -left-px"}`} />
       <div className={`absolute h-3 w-3 border-b border-r border-[#d4602c] transition-all ${selected ? "-bottom-1.5 -right-1.5" : "-bottom-px -right-px"}`} />
 
-      {/* Wavy error border — SVG displacement filter distorts a red outline */}
       {hasError && (
         <>
           <svg className="absolute h-0 w-0 overflow-hidden" aria-hidden="true">
@@ -357,7 +354,6 @@ function BaseNode({
         </>
       )}
 
-      {/* Noise overlay */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.03]"
         style={{
@@ -367,7 +363,6 @@ function BaseNode({
       />
 
       <div className="relative">
-        {/* Header */}
         <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
           <span className="text-[#d4602c]">{icon}</span>
           <p className="text-[9px] font-medium uppercase tracking-[0.25em] text-white/40">
@@ -375,18 +370,15 @@ function BaseNode({
           </p>
         </div>
 
-        {/* Label */}
         <div className="border-b border-white/10 px-3 py-2.5">
           <p className="text-[13px] font-bold leading-tight tracking-tight text-white/90">{label}</p>
         </div>
 
-        {/* Content */}
         <div className="px-3 py-2">
           {children}
         </div>
       </div>
 
-      {/* Scanlines */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.04]"
         style={{
@@ -397,55 +389,30 @@ function BaseNode({
   );
 }
 
-<<<<<<< HEAD
-function InputNode({ data, selected }: NodeProps<Node<FlowNodeData, "inputNode">>) {
-  const isCryptoMonitor = data.inputType === "crypto_monitor";
-  const isCryptoPrice = data.inputType === "crypto_price";
-  const isCrypto = isCryptoMonitor || isCryptoPrice;
-=======
 function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
   const { data, selected } = props;
   if (data.inputType === "crypto_monitor") {
     return <CryptoMonitorNode {...props} />;
   }
->>>>>>> origin/main
+
+  const isCryptoPrice = data.inputType === "crypto_price";
 
   return (
     <BaseNode
       label={data.label}
-<<<<<<< HEAD
-      subtitle={isCryptoMonitor ? "Crypto Monitor" : isCryptoPrice ? "Crypto Price" : "Manual Trigger"}
+      subtitle={isCryptoPrice ? "Crypto Price" : "Manual Trigger"}
       icon={
-        isCrypto ? (
+        isCryptoPrice ? (
           <TrendingUp className="size-3.5 text-[#e8a838]" />
         ) : (
           <Zap className="size-3.5" />
         )
       }
-=======
-      subtitle="Manual Trigger"
-      icon={<Zap className="size-3.5" />}
->>>>>>> origin/main
       hasError={data.hasError}
       selected={selected}
     >
       <Handle type="source" position={Position.Right} />
-<<<<<<< HEAD
-      {isCryptoMonitor && data.cryptoMonitorConfig ? (
-        <div className="space-y-0.5">
-          <p className="text-[11px] font-medium text-[#e8a838]">
-            {data.cryptoMonitorConfig.symbol}
-          </p>
-          {data.cryptoMonitorConfig.targetPrice > 0 && (
-            <p className="text-[11px] text-white/40">
-              {data.cryptoMonitorConfig.condition === "drops_below"
-                ? "Drops below"
-                : "Rises above"}{" "}
-              ${data.cryptoMonitorConfig.targetPrice.toLocaleString()}
-            </p>
-          )}
-        </div>
-      ) : isCryptoPrice && data.cryptoMonitorConfig ? (
+      {isCryptoPrice && data.cryptoMonitorConfig ? (
         <div className="space-y-0.5">
           <p className="text-[11px] font-medium text-[#e8a838]">
             {data.cryptoMonitorConfig.symbol}
@@ -464,14 +431,6 @@ function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
           </p>
         </>
       )}
-=======
-      <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
-        Publishes
-      </div>
-      <p className="mt-0.5 text-[10px] text-white/50">
-        {data.outputs.join(", ") || "none"}
-      </p>
->>>>>>> origin/main
     </BaseNode>
   );
 }
@@ -492,6 +451,16 @@ function OutputNode({ data, selected }: NodeProps<Node<FlowNodeData, "outputNode
       <p className="mt-0.5 text-[10px] text-white/50">
         {data.inputs.join(", ") || "none"}
       </p>
+      {data.action && (
+        <div className="mt-1.5 border-t border-white/10 pt-1.5">
+          <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
+            Action
+          </div>
+          <p className="mt-0.5 text-[10px] text-white/50">
+            {data.action.verb} &middot; {data.action.token_id || "no token"} &middot; ${data.action.amount || 0}
+          </p>
+        </div>
+      )}
     </BaseNode>
   );
 }
@@ -578,13 +547,7 @@ function PhantomNode() {
   );
 }
 
-function ToolbarField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function ToolbarField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="font-[family-name:var(--font-geist-mono)] text-[8px] uppercase tracking-[0.25em] text-white/30">
@@ -596,10 +559,7 @@ function ToolbarField({
 }
 
 function FloatingNodeToolbar({
-  node,
-  errors,
-  onUpdate,
-  onDelete,
+  node, errors, onUpdate, onDelete,
 }: {
   node: Node<FlowNodeData, FlowNodeType>;
   errors: BlueprintError[];
@@ -608,13 +568,9 @@ function FloatingNodeToolbar({
 }) {
   const { flowToScreenPosition, getNode } = useReactFlow();
   const { zoom } = useViewport();
-
   const internalNode = getNode(node.id);
   const nodeWidth = internalNode?.measured?.width ?? 200;
-  const screenPos = flowToScreenPosition({
-    x: node.position.x + nodeWidth / 2,
-    y: node.position.y,
-  });
+  const screenPos = flowToScreenPosition({ x: node.position.x + nodeWidth / 2, y: node.position.y });
   const nodeErrors = errors.filter((e) => e.nodeId === node.id);
 
   const nodeTypeLabel =
@@ -627,87 +583,39 @@ function FloatingNodeToolbar({
   return (
     <div
       className="fixed z-50 flex flex-col items-center"
-      style={{
-        left: screenPos.x,
-        top: screenPos.y,
-        transform: `translate(-50%, -100%) scale(${zoom})`,
-        transformOrigin: "center bottom",
-        paddingBottom: 8,
-      }}
+      style={{ left: screenPos.x, top: screenPos.y, transform: `translate(-50%, -100%) scale(${zoom})`, transformOrigin: "center bottom", paddingBottom: 8 }}
     >
       {nodeErrors.length > 0 && (
         <div className="mb-1 space-y-1">
           {nodeErrors.map((error) => (
-            <div
-              key={`${error.code}-${error.nodeId ?? ""}`}
-              className="border border-[#c45c5c]/30 bg-[#111314] px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] text-[#c45c5c]"
-            >
+            <div key={`${error.code}-${error.nodeId ?? ""}`} className="border border-[#c45c5c]/30 bg-[#111314] px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] text-[#c45c5c]">
               {error.message}
             </div>
           ))}
         </div>
       )}
       <div className="border border-white/10 bg-[#111314] font-[family-name:var(--font-geist-mono)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-          <span className="text-[9px] uppercase tracking-[0.2em] text-[#d4602c]">
-            {nodeTypeLabel}
-          </span>
-          <button
-            onClick={onDelete}
-            className="text-white/30 transition-colors hover:text-[#c45c5c]"
-          >
+          <span className="text-[9px] uppercase tracking-[0.2em] text-[#d4602c]">{nodeTypeLabel}</span>
+          <button onClick={onDelete} className="text-white/30 transition-colors hover:text-[#c45c5c]">
             <Trash2 className="size-3" />
           </button>
         </div>
 
-        {/* Fields */}
         <div className="flex flex-col gap-2 px-3 py-2">
-          {/* Label — all nodes */}
           <ToolbarField label="Label">
-            <Input
-              className="h-6 w-56 text-[11px]"
-              value={node.data.label}
-              onChange={(e) => onUpdate({ label: e.target.value })}
-              placeholder="Node label"
-            />
+            <Input className="h-6 w-56 text-[11px]" value={node.data.label} onChange={(e) => onUpdate({ label: e.target.value })} placeholder="Node label" />
           </ToolbarField>
 
-          {/* Input node: outputs (publishes) */}
           {node.type === "inputNode" && (
             <ToolbarField label="Publishes">
-              <Input
-                className="h-6 w-56 text-[11px]"
-                value={node.data.outputs.join(", ")}
-                onChange={(e) =>
-                  onUpdate({
-                    outputs: e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
-                placeholder="topic.orders, topic.events"
-              />
+              <Input className="h-6 w-56 text-[11px]" value={node.data.outputs.join(", ")} onChange={(e) => onUpdate({ outputs: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} placeholder="topic.orders, topic.events" />
             </ToolbarField>
           )}
 
-          {/* Input node: crypto price fields (symbol only) */}
           {node.type === "inputNode" && node.data.inputType === "crypto_price" && (
             <ToolbarField label="Symbol">
-              <select
-                className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
-                value={node.data.cryptoMonitorConfig?.symbol ?? "BTCUSDT"}
-                onChange={(e) =>
-                  onUpdate({
-                    cryptoMonitorConfig: {
-                      symbol: e.target.value,
-                      condition: "drops_below" as CryptoConditionOperator,
-                      targetPrice: 0,
-                    },
-                  })
-                }
-              >
+              <select className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none" value={node.data.cryptoMonitorConfig?.symbol ?? "BTCUSDT"} onChange={(e) => onUpdate({ cryptoMonitorConfig: { symbol: e.target.value, condition: "drops_below" as CryptoConditionOperator, targetPrice: 0 } })}>
                 <option value="BTCUSDT">BTC / USDT</option>
                 <option value="ETHUSDT">ETH / USDT</option>
                 <option value="SOLUSDT">SOL / USDT</option>
@@ -717,25 +625,10 @@ function FloatingNodeToolbar({
             </ToolbarField>
           )}
 
-          {/* Input node: crypto monitor fields */}
           {node.type === "inputNode" && node.data.inputType === "crypto_monitor" && (
             <>
               <ToolbarField label="Symbol">
-                <select
-                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
-                  value={node.data.cryptoMonitorConfig?.symbol ?? "BTCUSDT"}
-                  onChange={(e) =>
-                    onUpdate({
-                      cryptoMonitorConfig: {
-                        ...(node.data.cryptoMonitorConfig ?? {
-                          condition: "drops_below" as CryptoConditionOperator,
-                          targetPrice: 0,
-                        }),
-                        symbol: e.target.value,
-                      },
-                    })
-                  }
-                >
+                <select className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none" value={node.data.cryptoMonitorConfig?.symbol ?? "BTCUSDT"} onChange={(e) => onUpdate({ cryptoMonitorConfig: { ...(node.data.cryptoMonitorConfig ?? { condition: "drops_below" as CryptoConditionOperator, targetPrice: 0 }), symbol: e.target.value } })}>
                   <option value="BTCUSDT">BTC / USDT</option>
                   <option value="ETHUSDT">ETH / USDT</option>
                   <option value="SOLUSDT">SOL / USDT</option>
@@ -744,156 +637,56 @@ function FloatingNodeToolbar({
                 </select>
               </ToolbarField>
               <ToolbarField label="Condition">
-                <select
-                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
-                  value={node.data.cryptoMonitorConfig?.condition ?? "drops_below"}
-                  onChange={(e) =>
-                    onUpdate({
-                      cryptoMonitorConfig: {
-                        ...(node.data.cryptoMonitorConfig ?? {
-                          symbol: "BTCUSDT",
-                          targetPrice: 0,
-                        }),
-                        condition: e.target.value as CryptoConditionOperator,
-                      },
-                    })
-                  }
-                >
+                <select className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none" value={node.data.cryptoMonitorConfig?.condition ?? "drops_below"} onChange={(e) => onUpdate({ cryptoMonitorConfig: { ...(node.data.cryptoMonitorConfig ?? { symbol: "BTCUSDT", targetPrice: 0 }), condition: e.target.value as CryptoConditionOperator } })}>
                   <option value="drops_below">Drops below</option>
                   <option value="rises_above">Rises above</option>
                 </select>
               </ToolbarField>
               <ToolbarField label="Target Price">
-                <Input
-                  className="h-6 w-56 text-[11px]"
-                  type="number"
-                  value={node.data.cryptoMonitorConfig?.targetPrice ?? ""}
-                  onChange={(e) =>
-                    onUpdate({
-                      cryptoMonitorConfig: {
-                        ...(node.data.cryptoMonitorConfig ?? {
-                          symbol: "BTCUSDT",
-                          condition: "drops_below" as CryptoConditionOperator,
-                        }),
-                        targetPrice: parseFloat(e.target.value) || 0,
-                      },
-                    })
-                  }
-                  placeholder="Target $"
-                />
+                <Input className="h-6 w-56 text-[11px]" type="number" value={node.data.cryptoMonitorConfig?.targetPrice ?? ""} onChange={(e) => onUpdate({ cryptoMonitorConfig: { ...(node.data.cryptoMonitorConfig ?? { symbol: "BTCUSDT", condition: "drops_below" as CryptoConditionOperator }), targetPrice: parseFloat(e.target.value) || 0 } })} placeholder="Target $" />
               </ToolbarField>
             </>
           )}
 
-          {/* Output node: inputs (consumes) */}
           {node.type === "outputNode" && (
-            <ToolbarField label="Consumes">
-              <Input
-                className="h-6 w-56 text-[11px]"
-                value={node.data.inputs.join(", ")}
-                onChange={(e) =>
-                  onUpdate({
-                    inputs: e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
-                placeholder="topic.orders"
-              />
-            </ToolbarField>
-          )}
-
-          {/* Decision node: inputs, branches, action */}
-          {node.type === "decisionNode" && (
             <>
               <ToolbarField label="Consumes">
-                <Input
-                  className="h-6 w-56 text-[11px]"
-                  value={node.data.inputs.join(", ")}
-                  onChange={(e) =>
-                    onUpdate({
-                      inputs: e.target.value
-                        .split(",")
-                        .map((s) => s.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                  placeholder="topic.orders"
-                />
-              </ToolbarField>
-              <ToolbarField label="Branches">
-                <Input
-                  className="h-6 w-56 text-[11px]"
-                  value={node.data.outputs.join(", ")}
-                  onChange={(e) =>
-                    onUpdate({
-                      outputs: e.target.value
-                        .split(",")
-                        .map((s) => s.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                  placeholder="approved, rejected"
-                />
+                <Input className="h-6 w-56 text-[11px]" value={node.data.inputs.join(", ")} onChange={(e) => onUpdate({ inputs: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} placeholder="topic.orders" />
               </ToolbarField>
               <div className="border-t border-white/[0.06] pt-2">
-                <span className="mb-1 block text-[8px] uppercase tracking-[0.25em] text-white/30">
-                  Action
-                </span>
+                <span className="mb-1 block text-[8px] uppercase tracking-[0.25em] text-white/30">Action</span>
                 <div className="flex gap-1.5">
-                  <select
-                    className="h-6 w-20 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
-                    value={node.data.action?.verb ?? "buy"}
-                    onChange={(e) =>
-                      onUpdate({
-                        action: {
-                          verb: e.target.value as Decision,
-                          market_id: node.data.action?.market_id ?? "",
-                        },
-                      })
-                    }
-                  >
+                  <select className="h-6 w-20 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none" value={node.data.action?.verb ?? "buy"} onChange={(e) => onUpdate({ action: { verb: e.target.value as Decision, token_id: node.data.action?.token_id ?? "", amount: node.data.action?.amount ?? 0 } })}>
                     <option value="buy">Buy</option>
                     <option value="sell">Sell</option>
                   </select>
-                  <Input
-                    className="h-6 flex-1 text-[11px]"
-                    value={node.data.action?.market_id ?? ""}
-                    onChange={(e) =>
-                      onUpdate({
-                        action: {
-                          verb: node.data.action?.verb ?? "buy",
-                          market_id: e.target.value,
-                        },
-                      })
-                    }
-                    placeholder="Market ID"
-                  />
+                  <Input className="h-6 flex-1 text-[11px]" value={node.data.action?.token_id ?? ""} onChange={(e) => onUpdate({ action: { verb: node.data.action?.verb ?? "buy", token_id: e.target.value, amount: node.data.action?.amount ?? 0 } })} placeholder="Token ID" />
+                </div>
+                <div className="mt-1.5">
+                  <Input className="h-6 w-56 text-[11px]" type="number" value={node.data.action?.amount ?? ""} onChange={(e) => onUpdate({ action: { verb: node.data.action?.verb ?? "buy", token_id: node.data.action?.token_id ?? "", amount: parseFloat(e.target.value) || 0 } })} placeholder="Amount ($)" />
                 </div>
               </div>
             </>
           )}
 
-          {/* Market node: slug + outcome */}
+          {node.type === "decisionNode" && (
+            <>
+              <ToolbarField label="Consumes">
+                <Input className="h-6 w-56 text-[11px]" value={node.data.inputs.join(", ")} onChange={(e) => onUpdate({ inputs: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} placeholder="topic.orders" />
+              </ToolbarField>
+              <ToolbarField label="Branches">
+                <Input className="h-6 w-56 text-[11px]" value={node.data.outputs.join(", ")} onChange={(e) => onUpdate({ outputs: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} placeholder="approved, rejected" />
+              </ToolbarField>
+            </>
+          )}
+
           {node.type === "marketNode" && (
             <>
               <ToolbarField label="Event Slug">
-                <Input
-                  className="h-6 w-56 text-[11px]"
-                  value={node.data.marketSlug ?? ""}
-                  onChange={(e) => onUpdate({ marketSlug: e.target.value })}
-                  placeholder="e.g. kraken-ipo-in-2025"
-                />
+                <Input className="h-6 w-56 text-[11px]" value={node.data.marketSlug ?? ""} onChange={(e) => onUpdate({ marketSlug: e.target.value })} placeholder="e.g. kraken-ipo-in-2025" />
               </ToolbarField>
               <ToolbarField label="Outcome Price">
-                <select
-                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
-                  value={node.data.marketOutcome ?? "yes"}
-                  onChange={(e) =>
-                    onUpdate({ marketOutcome: e.target.value as MarketOutcome })
-                  }
-                >
+                <select className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none" value={node.data.marketOutcome ?? "yes"} onChange={(e) => onUpdate({ marketOutcome: e.target.value as MarketOutcome })}>
                   <option value="yes">YES price</option>
                   <option value="no">NO price</option>
                 </select>
@@ -901,22 +694,10 @@ function FloatingNodeToolbar({
             </>
           )}
 
-          {/* Comparison node: operator + thresholds */}
           {node.type === "comparisonNode" && (
             <>
               <ToolbarField label="Operator">
-                <select
-                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
-                  value={node.data.comparisonConfig?.operator ?? ">"}
-                  onChange={(e) =>
-                    onUpdate({
-                      comparisonConfig: {
-                        ...node.data.comparisonConfig,
-                        operator: e.target.value as ComparisonOperator,
-                      },
-                    })
-                  }
-                >
+                <select className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none" value={node.data.comparisonConfig?.operator ?? ">"} onChange={(e) => onUpdate({ comparisonConfig: { ...node.data.comparisonConfig, operator: e.target.value as ComparisonOperator } })}>
                   <option value=">">&gt; Greater than</option>
                   <option value="<">&lt; Less than</option>
                   <option value=">=">&gt;= Greater or equal</option>
@@ -926,38 +707,10 @@ function FloatingNodeToolbar({
                 </select>
               </ToolbarField>
               <ToolbarField label="Threshold A (static value)">
-                <Input
-                  className="h-6 w-56 text-[11px]"
-                  type="number"
-                  value={node.data.comparisonConfig?.thresholdA ?? ""}
-                  onChange={(e) =>
-                    onUpdate({
-                      comparisonConfig: {
-                        ...node.data.comparisonConfig,
-                        operator: node.data.comparisonConfig?.operator ?? ">",
-                        thresholdA: e.target.value ? parseFloat(e.target.value) : undefined,
-                      },
-                    })
-                  }
-                  placeholder="Leave empty if connected"
-                />
+                <Input className="h-6 w-56 text-[11px]" type="number" value={node.data.comparisonConfig?.thresholdA ?? ""} onChange={(e) => onUpdate({ comparisonConfig: { ...node.data.comparisonConfig, operator: node.data.comparisonConfig?.operator ?? ">", thresholdA: e.target.value ? parseFloat(e.target.value) : undefined } })} placeholder="Leave empty if connected" />
               </ToolbarField>
               <ToolbarField label="Threshold B (static value)">
-                <Input
-                  className="h-6 w-56 text-[11px]"
-                  type="number"
-                  value={node.data.comparisonConfig?.thresholdB ?? ""}
-                  onChange={(e) =>
-                    onUpdate({
-                      comparisonConfig: {
-                        ...node.data.comparisonConfig,
-                        operator: node.data.comparisonConfig?.operator ?? ">",
-                        thresholdB: e.target.value ? parseFloat(e.target.value) : undefined,
-                      },
-                    })
-                  }
-                  placeholder="Leave empty if connected"
-                />
+                <Input className="h-6 w-56 text-[11px]" type="number" value={node.data.comparisonConfig?.thresholdB ?? ""} onChange={(e) => onUpdate({ comparisonConfig: { ...node.data.comparisonConfig, operator: node.data.comparisonConfig?.operator ?? ">", thresholdB: e.target.value ? parseFloat(e.target.value) : undefined } })} placeholder="Leave empty if connected" />
               </ToolbarField>
             </>
           )}
@@ -967,107 +720,48 @@ function FloatingNodeToolbar({
   );
 }
 
-type ConnectionInfo = {
-  fromNodeId: string;
-  fromHandleId: string | null;
-  fromHandleType: "source" | "target";
-};
+type ConnectionInfo = { fromNodeId: string; fromHandleId: string | null; fromHandleType: "source" | "target" };
 
-type NodeOption = {
-  type: FlowNodeType;
-  inputSubType?: InputNodeType;
-  label: string;
-  icon: React.ReactNode;
-  hasTarget: boolean;
-  hasSource: boolean;
-};
+type NodeOption = { type: FlowNodeType; inputSubType?: InputNodeType; label: string; icon: React.ReactNode; hasTarget: boolean; hasSource: boolean };
 
-<<<<<<< HEAD
-const ALL_NODE_OPTIONS: NodeOption[] = [
-  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
-  { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
-  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
-  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
-  { type: "comparisonNode", label: "Comparison", icon: <Scale className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
-=======
 const INPUT_NODE_OPTIONS: NodeOption[] = [
   { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
->>>>>>> origin/main
+  { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
   { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
 ];
 
 const OTHER_NODE_OPTIONS: NodeOption[] = [
   { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
   { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
+  { type: "comparisonNode", label: "Comparison", icon: <Scale className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
 ];
 
 const ALL_NODE_OPTIONS: NodeOption[] = [...INPUT_NODE_OPTIONS, ...OTHER_NODE_OPTIONS];
 
-const DROPDOWN_CONTENT_CLASS =
-  "border-white/10 bg-[#111314] shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
+const DROPDOWN_CONTENT_CLASS = "border-white/10 bg-[#111314] shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
+const DROPDOWN_ITEM_CLASS = "text-white/80 focus:bg-white/5 focus:text-white/80 data-[highlighted]:bg-white/5 data-[highlighted]:text-white/80";
+const DROPDOWN_SUBTRIGGER_CLASS = "text-white/80 focus:bg-white/5 focus:text-white/80 data-[state=open]:bg-white/5 data-[state=open]:text-white/80 data-[highlighted]:bg-white/5 data-[highlighted]:text-white/80";
+const DROPDOWN_ITEM_DESTRUCTIVE_CLASS = "text-[#c45c5c] focus:bg-[#c45c5c]/10 focus:text-[#c45c5c] data-[highlighted]:bg-[#c45c5c]/10 data-[highlighted]:text-[#c45c5c]";
 
-const DROPDOWN_ITEM_CLASS =
-  "text-white/80 focus:bg-white/5 focus:text-white/80 data-[highlighted]:bg-white/5 data-[highlighted]:text-white/80";
-
-const DROPDOWN_SUBTRIGGER_CLASS =
-  "text-white/80 focus:bg-white/5 focus:text-white/80 data-[state=open]:bg-white/5 data-[state=open]:text-white/80 data-[highlighted]:bg-white/5 data-[highlighted]:text-white/80";
-
-const DROPDOWN_ITEM_DESTRUCTIVE_CLASS =
-  "text-[#c45c5c] focus:bg-[#c45c5c]/10 focus:text-[#c45c5c] data-[highlighted]:bg-[#c45c5c]/10 data-[highlighted]:text-[#c45c5c]";
-
-function ConnectionNodePicker({
-  menu,
-  onAddNode,
-  onClose,
-}: {
+function ConnectionNodePicker({ menu, onAddNode, onClose }: {
   menu: Extract<ContextMenu, { type: "connection" }>;
-  onAddNode: (
-    type: FlowNodeType,
-    position: { x: number; y: number },
-    connectFrom: ConnectionInfo,
-    inputSubType?: InputNodeType,
-  ) => void;
+  onAddNode: (type: FlowNodeType, position: { x: number; y: number }, connectFrom: ConnectionInfo, inputSubType?: InputNodeType) => void;
   onClose: () => void;
 }) {
-  // Subscribe to viewport so we re-render (and reposition) on pan/zoom
   useViewport();
   const { flowToScreenPosition } = useReactFlow();
   const screenPos = flowToScreenPosition({ x: menu.flowX, y: menu.flowY });
-
-  const connectFrom: ConnectionInfo = {
-    fromNodeId: menu.fromNodeId,
-    fromHandleId: menu.fromHandleId,
-    fromHandleType: menu.fromHandleType,
-  };
-
-  const options = ALL_NODE_OPTIONS.filter((opt) =>
-    connectFrom.fromHandleType === "source" ? opt.hasTarget : opt.hasSource,
-  );
+  const connectFrom: ConnectionInfo = { fromNodeId: menu.fromNodeId, fromHandleId: menu.fromHandleId, fromHandleType: menu.fromHandleType };
+  const options = ALL_NODE_OPTIONS.filter((opt) => connectFrom.fromHandleType === "source" ? opt.hasTarget : opt.hasSource);
 
   return (
     <DropdownMenu open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
       <DropdownMenuTrigger asChild>
-        <div
-          className="fixed size-0"
-          style={{ left: screenPos.x, top: screenPos.y }}
-        />
+        <div className="fixed size-0" style={{ left: screenPos.x, top: screenPos.y }} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={0}
-        className={`min-w-[120px] ${DROPDOWN_CONTENT_CLASS}`}
-        onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
-      >
+      <DropdownMenuContent align="start" side="bottom" sideOffset={0} className={`min-w-[120px] ${DROPDOWN_CONTENT_CLASS}`} onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
         {options.map((opt) => (
-          <DropdownMenuItem
-            key={`${opt.type}-${opt.inputSubType ?? ""}`}
-            className={DROPDOWN_ITEM_CLASS}
-            onClick={() => {
-              onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom, opt.inputSubType);
-              onClose();
-            }}
-          >
+          <DropdownMenuItem key={`${opt.type}-${opt.inputSubType ?? ""}`} className={DROPDOWN_ITEM_CLASS} onClick={() => { onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom, opt.inputSubType); onClose(); }}>
             {opt.icon}
             {opt.label}
           </DropdownMenuItem>
@@ -1077,37 +771,18 @@ function ConnectionNodePicker({
   );
 }
 
-function CanvasContextMenu({
-  menu,
-  onAddNode,
-  onDeleteNode,
-  onClose,
-}: {
+function CanvasContextMenu({ menu, onAddNode, onDeleteNode, onClose }: {
   menu: Exclude<ContextMenu, { type: "connection" }>;
-  onAddNode: (
-    type: FlowNodeType,
-    position: { x: number; y: number },
-    connectFrom?: ConnectionInfo,
-    inputSubType?: InputNodeType,
-  ) => void;
+  onAddNode: (type: FlowNodeType, position: { x: number; y: number }, connectFrom?: ConnectionInfo, inputSubType?: InputNodeType) => void;
   onDeleteNode: (nodeId: string) => void;
   onClose: () => void;
 }) {
   return (
     <DropdownMenu open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
       <DropdownMenuTrigger asChild>
-        <div
-          className="fixed size-0"
-          style={{ left: menu.screenX, top: menu.screenY }}
-        />
+        <div className="fixed size-0" style={{ left: menu.screenX, top: menu.screenY }} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={0}
-        className={`min-w-[140px] ${DROPDOWN_CONTENT_CLASS}`}
-        onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
-      >
+      <DropdownMenuContent align="start" side="bottom" sideOffset={0} className={`min-w-[140px] ${DROPDOWN_CONTENT_CLASS}`} onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
         {menu.type === "pane" ? (
           <>
             <DropdownMenuSub>
@@ -1117,14 +792,7 @@ function CanvasContextMenu({
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className={DROPDOWN_CONTENT_CLASS}>
                 {INPUT_NODE_OPTIONS.map((opt) => (
-                  <DropdownMenuItem
-                    key={`${opt.type}-${opt.inputSubType ?? ""}`}
-                    className={DROPDOWN_ITEM_CLASS}
-                    onClick={() => {
-                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
-                      onClose();
-                    }}
-                  >
+                  <DropdownMenuItem key={`${opt.type}-${opt.inputSubType ?? ""}`} className={DROPDOWN_ITEM_CLASS} onClick={() => { onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType); onClose(); }}>
                     {opt.icon}
                     {opt.label}
                   </DropdownMenuItem>
@@ -1132,27 +800,14 @@ function CanvasContextMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             {OTHER_NODE_OPTIONS.map((opt) => (
-              <DropdownMenuItem
-                key={`${opt.type}-${opt.inputSubType ?? ""}`}
-                className={DROPDOWN_ITEM_CLASS}
-                onClick={() => {
-                  onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
-                  onClose();
-                }}
-              >
+              <DropdownMenuItem key={`${opt.type}-${opt.inputSubType ?? ""}`} className={DROPDOWN_ITEM_CLASS} onClick={() => { onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType); onClose(); }}>
                 {opt.icon}
                 {opt.label}
               </DropdownMenuItem>
             ))}
           </>
         ) : (
-          <DropdownMenuItem
-            className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
-            onClick={() => {
-              onDeleteNode(menu.nodeId);
-              onClose();
-            }}
-          >
+          <DropdownMenuItem className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS} onClick={() => { onDeleteNode(menu.nodeId); onClose(); }}>
             <Trash2 className="size-3" />
             Delete node
           </DropdownMenuItem>
@@ -1162,74 +817,12 @@ function CanvasContextMenu({
   );
 }
 
-<<<<<<< HEAD
-function InputNodeDropdown({
-  onSelect,
-}: {
-  onSelect: (subType: InputNodeType) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as globalThis.Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <Button
-        variant="secondary"
-        className="w-full"
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        <Plus className="size-4" />
-        Add Input
-      </Button>
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-full border border-white/10 bg-[#111314] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-          <button
-            className={DROPDOWN_ITEM_CLASS}
-            onClick={() => {
-              onSelect("crypto_monitor");
-              setOpen(false);
-            }}
-          >
-            <TrendingUp className="size-3 text-[#e8a838]" />
-            Crypto Monitor
-          </button>
-          <button
-            className={DROPDOWN_ITEM_CLASS}
-            onClick={() => {
-              onSelect("crypto_price");
-              setOpen(false);
-            }}
-          >
-            <TrendingUp className="size-3 text-[#e8a838]" />
-            Crypto Price
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-=======
->>>>>>> origin/main
 function BlueprintStudioInner() {
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string>("");
   const [nodes, setNodes] = useState<Node<FlowNodeData, FlowNodeType>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
-  const [validationErrors, setValidationErrors] = useState<BlueprintError[]>(
-    [],
-  );
+  const [validationErrors, setValidationErrors] = useState<BlueprintError[]>([]);
   const [status, setStatus] = useState<"saved" | "invalid">("saved");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -1253,36 +846,17 @@ function BlueprintStudioInner() {
   const screenToFlowPositionRef = useRef(screenToFlowPosition);
   screenToFlowPositionRef.current = screenToFlowPosition;
 
-  const selectedBlueprint = useMemo(
-    () => blueprints.find((item) => item.id === selectedBlueprintId) ?? null,
-    [blueprints, selectedBlueprintId],
-  );
+  const selectedBlueprint = useMemo(() => blueprints.find((item) => item.id === selectedBlueprintId) ?? null, [blueprints, selectedBlueprintId]);
 
   const errorNodeIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const error of validationErrors) {
-      if (error.nodeId) ids.add(error.nodeId);
-    }
+    for (const error of validationErrors) { if (error.nodeId) ids.add(error.nodeId); }
     return ids;
   }, [validationErrors]);
 
-  const displayNodes = useMemo(
-    () =>
-      nodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          hasError: errorNodeIds.has(node.id),
-        },
-      })),
-    [nodes, errorNodeIds],
-  );
+  const displayNodes = useMemo(() => nodes.map((node) => ({ ...node, data: { ...node.data, hasError: errorNodeIds.has(node.id) } })), [nodes, errorNodeIds]);
 
-  useEffect(() => {
-    const loaded = loadBlueprints();
-    setBlueprints(loaded);
-    setSelectedBlueprintId(loaded[0]?.id ?? "");
-  }, []);
+  useEffect(() => { const loaded = loadBlueprints(); setBlueprints(loaded); setSelectedBlueprintId(loaded[0]?.id ?? ""); }, []);
 
   useEffect(() => {
     const bp = blueprints.find((item) => item.id === selectedBlueprintId) ?? null;
@@ -1293,161 +867,84 @@ function BlueprintStudioInner() {
     const result = BlueprintUtils.validate(bp);
     setValidationErrors(result.errors);
     setStatus(result.valid ? "saved" : "invalid");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync flow state when switching blueprints
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBlueprintId]);
 
-  const persistCurrent = useCallback(
-    (nextNodes: Node<FlowNodeData, FlowNodeType>[], nextEdges: Edge[]) => {
-      if (!selectedBlueprint) return;
-
-      const updated = flowToBlueprint(selectedBlueprint, nextNodes, nextEdges);
-      const result = BlueprintUtils.validate(updated);
-      setValidationErrors(result.errors);
-      setStatus(result.valid ? "saved" : "invalid");
-
-      setBlueprints((current) => {
-        const next = current.map((item) =>
-          item.id === updated.id ? updated : item,
-        );
-        if (result.valid) {
-          saveBlueprints(next);
-        }
-        return next;
-      });
-    },
-    [selectedBlueprint],
-  );
+  const persistCurrent = useCallback((nextNodes: Node<FlowNodeData, FlowNodeType>[], nextEdges: Edge[]) => {
+    if (!selectedBlueprint) return;
+    const updated = flowToBlueprint(selectedBlueprint, nextNodes, nextEdges);
+    const result = BlueprintUtils.validate(updated);
+    setValidationErrors(result.errors);
+    setStatus(result.valid ? "saved" : "invalid");
+    setBlueprints((current) => {
+      const next = current.map((item) => item.id === updated.id ? updated : item);
+      if (result.valid) { saveBlueprints(next); }
+      return next;
+    });
+  }, [selectedBlueprint]);
 
   const persistRef = useRef(persistCurrent);
   persistRef.current = persistCurrent;
 
-  const onNodesChange = useCallback(
-    (changes: NodeChange<Node<FlowNodeData, FlowNodeType>>[]) => {
-      // Ignore changes to the phantom node
-      let filtered = changes.filter(
-        (c) => !("id" in c && c.id === PHANTOM_NODE_ID),
-      );
-      // Suppress selection changes while dragging (prevents re-select after drop)
-      if (isDraggingNodeRef.current) {
-        filtered = filtered.filter((c) => c.type !== "select");
-      }
-      if (filtered.length === 0) return;
-      const next = applyNodeChanges(filtered, nodesRef.current);
-      setNodes(next);
-      nodesRef.current = next;
-      const hasDataChange = filtered.some((c) => c.type !== "select");
-      if (hasDataChange) {
-        persistRef.current(next, edgesRef.current);
-      }
-    },
-    [],
-  );
+  const onNodesChange = useCallback((changes: NodeChange<Node<FlowNodeData, FlowNodeType>>[]) => {
+    let filtered = changes.filter((c) => !("id" in c && c.id === PHANTOM_NODE_ID));
+    if (isDraggingNodeRef.current) { filtered = filtered.filter((c) => c.type !== "select"); }
+    if (filtered.length === 0) return;
+    const next = applyNodeChanges(filtered, nodesRef.current);
+    setNodes(next);
+    nodesRef.current = next;
+    if (filtered.some((c) => c.type !== "select")) { persistRef.current(next, edgesRef.current); }
+  }, []);
 
-  const onEdgesChange = useCallback(
-    (changes: EdgeChange<Edge>[]) => {
-      const filtered = changes.filter(
-        (c) => !("id" in c && c.id === PHANTOM_EDGE_ID),
-      );
-      if (filtered.length === 0) return;
-      const next = applyEdgeChanges(filtered, edgesRef.current);
-      setEdges(next);
-      edgesRef.current = next;
-      persistRef.current(nodesRef.current, next);
-    },
-    [],
-  );
+  const onEdgesChange = useCallback((changes: EdgeChange<Edge>[]) => {
+    const filtered = changes.filter((c) => !("id" in c && c.id === PHANTOM_EDGE_ID));
+    if (filtered.length === 0) return;
+    const next = applyEdgeChanges(filtered, edgesRef.current);
+    setEdges(next);
+    edgesRef.current = next;
+    persistRef.current(nodesRef.current, next);
+  }, []);
 
   const dispatchBlueprint = async () => {
     if (!selectedBlueprint || status !== "saved") return;
     setDispatching(true);
     try {
       const definition = toDefinition(selectedBlueprint);
-      const res = await fetch(`${API_URL}/api/redprints`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(definition),
-      });
+      const res = await fetch(`${API_URL}/api/redprints`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(definition) });
       if (!res.ok) throw new Error(`Dispatch failed: ${res.status}`);
       const raw = (await res.json()) as ApiRedprintResponse;
       setActiveRedprint(apiResponseToRedprint(raw));
-    } catch (err) {
-      console.error("Dispatch error:", err);
-    } finally {
-      setDispatching(false);
-    }
+    } catch (err) { console.error("Dispatch error:", err); } finally { setDispatching(false); }
   };
 
   const pushEvent = async (nodeName: string) => {
     if (!activeRedprint) return;
-    try {
-      await fetch(
-        `${API_URL}/api/redprints/${activeRedprint.id}/nodes/${nodeName}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ output: true }),
-        },
-      );
-    } catch (err) {
-      console.error("Push event error:", err);
-    }
+    try { await fetch(`${API_URL}/api/redprints/${activeRedprint.id}/nodes/${nodeName}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ output: true }) }); }
+    catch (err) { console.error("Push event error:", err); }
   };
 
   const teardownRedprint = async () => {
     if (!activeRedprint) return;
-    try {
-      await fetch(`${API_URL}/api/redprints/${activeRedprint.id}`, {
-        method: "DELETE",
-      });
-      setActiveRedprint(null);
-    } catch (err) {
-      console.error("Teardown error:", err);
-    }
+    try { await fetch(`${API_URL}/api/redprints/${activeRedprint.id}`, { method: "DELETE" }); setActiveRedprint(null); }
+    catch (err) { console.error("Teardown error:", err); }
   };
 
   useEffect(() => {
     if (!activeRedprint || activeRedprint.status !== "running") return;
     const interval = setInterval(async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/api/redprints/${activeRedprint.id}`,
-        );
-        if (res.ok) {
-          const raw = (await res.json()) as ApiRedprintResponse;
-          setActiveRedprint(apiResponseToRedprint(raw));
-        }
-      } catch {
-        /* ignore polling errors */
-      }
+      try { const res = await fetch(`${API_URL}/api/redprints/${activeRedprint.id}`); if (res.ok) { const raw = (await res.json()) as ApiRedprintResponse; setActiveRedprint(apiResponseToRedprint(raw)); } } catch { /* ignore */ }
     }, 1000);
     return () => clearInterval(interval);
   }, [activeRedprint?.id, activeRedprint?.status]);
 
-  const addNodeByType = (
-    type: FlowNodeType,
-    atPosition?: { x: number; y: number },
-    connectFrom?: ConnectionInfo,
-    inputSubType?: InputNodeType,
-  ) => {
+  const addNodeByType = (type: FlowNodeType, atPosition?: { x: number; y: number }, connectFrom?: ConnectionInfo, inputSubType?: InputNodeType) => {
     let position: { x: number; y: number };
-
-    if (atPosition) {
-      position = atPosition;
-    } else {
-      const flowElement = document.querySelector(
-        ".react-flow",
-      ) as HTMLElement | null;
-      const fallbackX = window.innerWidth / 2;
-      const fallbackY = window.innerHeight / 2;
+    if (atPosition) { position = atPosition; } else {
+      const flowElement = document.querySelector(".react-flow") as HTMLElement | null;
       const bounds = flowElement?.getBoundingClientRect();
-      const center = screenToFlowPosition({
-        x: bounds ? bounds.left + bounds.width / 2 : fallbackX,
-        y: bounds ? bounds.top + bounds.height / 2 : fallbackY,
-      });
+      const center = screenToFlowPosition({ x: bounds ? bounds.left + bounds.width / 2 : window.innerWidth / 2, y: bounds ? bounds.top + bounds.height / 2 : window.innerHeight / 2 });
       const anchor = nodes[nodes.length - 1];
-      position = anchor
-        ? { x: anchor.position.x + 260, y: anchor.position.y + 24 }
-        : { x: center.x, y: center.y };
+      position = anchor ? { x: anchor.position.x + 260, y: anchor.position.y + 24 } : { x: center.x, y: center.y };
     }
 
     const isCryptoMonitor = type === "inputNode" && inputSubType === "crypto_monitor";
@@ -1455,50 +952,16 @@ function BlueprintStudioInner() {
     const isCrypto = isCryptoMonitor || isCryptoPrice;
     const id = `${type}-${Date.now()}`;
     const node: Node<FlowNodeData, FlowNodeType> = {
-      id,
-      type,
-      position,
+      id, type, position,
       data: {
-        label: isCryptoMonitor
-          ? "BTC Price Monitor"
-          : isCryptoPrice
-            ? "BTC Price"
-            : type === "decisionNode"
-              ? "New Decision"
-              : type === "inputNode"
-                ? "New Input"
-                : type === "comparisonNode"
-                  ? "Compare"
-                  : type === "marketNode"
-                    ? "Market"
-                    : "New Output",
-        inputs: type === "inputNode" || type === "marketNode"
-          ? []
-          : type === "comparisonNode"
-            ? ["input-a", "input-b"]
-            : ["topic.orders"],
-        outputs:
-          type === "decisionNode"
-            ? ["branch-a", "branch-b"]
-            : type === "outputNode" || type === "marketNode" || type === "comparisonNode"
-              ? []
-              : ["topic.orders"],
-        ...(type === "inputNode"
-          ? { inputType: inputSubType ?? "manual_trigger" }
-          : {}),
-        ...(isCrypto
-          ? {
-              cryptoMonitorConfig: {
-                symbol: "BTCUSDT",
-                condition: "drops_below" as CryptoConditionOperator,
-                targetPrice: 0,
-              },
-            }
-          : {}),
-        ...(type === "comparisonNode"
-          ? { comparisonConfig: { operator: ">" as ComparisonOperator } }
-          : {}),
+        label: isCryptoMonitor ? "BTC Price Monitor" : isCryptoPrice ? "BTC Price" : type === "decisionNode" ? "New Decision" : type === "inputNode" ? "New Input" : type === "comparisonNode" ? "Compare" : type === "marketNode" ? "Market" : "New Output",
+        inputs: type === "inputNode" || type === "marketNode" ? [] : type === "comparisonNode" ? ["input-a", "input-b"] : ["topic.orders"],
+        outputs: type === "decisionNode" ? ["branch-a", "branch-b"] : type === "outputNode" || type === "marketNode" || type === "comparisonNode" ? [] : ["topic.orders"],
+        ...(type === "inputNode" ? { inputType: inputSubType ?? "manual_trigger" } : {}),
+        ...(isCrypto ? { cryptoMonitorConfig: { symbol: "BTCUSDT", condition: "drops_below" as CryptoConditionOperator, targetPrice: 0 } } : {}),
+        ...(type === "comparisonNode" ? { comparisonConfig: { operator: ">" as ComparisonOperator } } : {}),
         ...(type === "marketNode" ? { marketSlug: "" } : {}),
+        ...(type === "outputNode" ? { action: { verb: "buy" as Decision, token_id: "", amount: 0 } } : {}),
       },
     };
 
@@ -1509,103 +972,41 @@ function BlueprintStudioInner() {
 
     let nextEdges = edgesRef.current;
     if (connectFrom) {
-      // Dragged from a source handle → new node is the target
-      // Dragged from a target handle → new node is the source
-      const edge: Edge =
-        connectFrom.fromHandleType === "source"
-          ? {
-              id: `edge-${Date.now()}`,
-              source: connectFrom.fromNodeId,
-              target: id,
-              sourceHandle: connectFrom.fromHandleId,
-              type: "smoothstep",
-            }
-          : {
-              id: `edge-${Date.now()}`,
-              source: id,
-              target: connectFrom.fromNodeId,
-              targetHandle: connectFrom.fromHandleId,
-              type: "smoothstep",
-            };
+      const edge: Edge = connectFrom.fromHandleType === "source"
+        ? { id: `edge-${Date.now()}`, source: connectFrom.fromNodeId, target: id, sourceHandle: connectFrom.fromHandleId, type: "smoothstep" }
+        : { id: `edge-${Date.now()}`, source: id, target: connectFrom.fromNodeId, targetHandle: connectFrom.fromHandleId, type: "smoothstep" };
       nextEdges = addEdge(edge, edgesRef.current);
       setEdges(nextEdges);
       edgesRef.current = nextEdges;
     }
-
     persistCurrent(nextNodes, nextEdges);
   };
 
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      if (
-        !connection.source ||
-        !connection.target ||
-        connection.source === connection.target
-      ) {
-        return;
-      }
+  const onConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target || connection.source === connection.target) return;
+    const sourceNode = nodesRef.current.find((node) => node.id === connection.source);
+    if (sourceNode?.type === "decisionNode" && !connection.sourceHandle) return;
+    const nextEdges = addEdge({ ...connection, id: `edge-${Date.now()}`, sourceHandle: connection.sourceHandle ?? undefined, targetHandle: connection.targetHandle ?? undefined, type: "smoothstep" }, edgesRef.current);
+    setEdges(nextEdges);
+    edgesRef.current = nextEdges;
+    persistRef.current(nodesRef.current, nextEdges);
+  }, []);
 
-      const sourceNode = nodesRef.current.find((node) => node.id === connection.source);
-      if (sourceNode?.type === "decisionNode" && !connection.sourceHandle) {
-        return;
-      }
-
-      const nextEdges = addEdge(
-        {
-          ...connection,
-          id: `edge-${Date.now()}`,
-          sourceHandle: connection.sourceHandle ?? undefined,
-          targetHandle: connection.targetHandle ?? undefined,
-          type: "smoothstep",
-        },
-        edgesRef.current,
-      );
-      setEdges(nextEdges);
-      edgesRef.current = nextEdges;
-      persistRef.current(nodesRef.current, nextEdges);
-    },
-    [],
-  );
-
-  const onConnectEnd: OnConnectEnd = useCallback(
-    (event, connectionState) => {
-      if (connectionState.toNode) return;
-      if (!connectionState.fromNode) return;
-
-      const clientX = "changedTouches" in event ? (event.changedTouches[0]?.clientX ?? 0) : event.clientX;
-      const clientY = "changedTouches" in event ? (event.changedTouches[0]?.clientY ?? 0) : event.clientY;
-      const flowPos = screenToFlowPositionRef.current({ x: clientX, y: clientY });
-
-      skipNextPaneClickRef.current = true;
-
-      setContextMenu({
-        type: "connection",
-        screenX: clientX,
-        screenY: clientY,
-        flowX: flowPos.x,
-        flowY: flowPos.y,
-        fromNodeId: connectionState.fromNode.id,
-        fromHandleId: connectionState.fromHandle?.id ?? null,
-        fromHandleType: (connectionState.fromHandle?.type as "source" | "target") ?? "source",
-      });
-    },
-    [],
-  );
+  const onConnectEnd: OnConnectEnd = useCallback((event, connectionState) => {
+    if (connectionState.toNode) return;
+    if (!connectionState.fromNode) return;
+    const clientX = "changedTouches" in event ? (event.changedTouches[0]?.clientX ?? 0) : event.clientX;
+    const clientY = "changedTouches" in event ? (event.changedTouches[0]?.clientY ?? 0) : event.clientY;
+    const flowPos = screenToFlowPositionRef.current({ x: clientX, y: clientY });
+    skipNextPaneClickRef.current = true;
+    setContextMenu({ type: "connection", screenX: clientX, screenY: clientY, flowX: flowPos.x, flowY: flowPos.y, fromNodeId: connectionState.fromNode.id, fromHandleId: connectionState.fromHandle?.id ?? null, fromHandleType: (connectionState.fromHandle?.type as "source" | "target") ?? "source" });
+  }, []);
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
 
   const updateSelectedNode = (patch: Partial<FlowNodeData>) => {
     if (!selectedNodeId) return;
-    const nextNodes = nodes.map((node) => {
-      if (node.id !== selectedNodeId) return node;
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          ...patch,
-        },
-      };
-    });
+    const nextNodes = nodes.map((node) => node.id !== selectedNodeId ? node : { ...node, data: { ...node.data, ...patch } });
     setNodes(nextNodes);
     updateNodeInternals(selectedNodeId);
     persistCurrent(nextNodes, edges);
@@ -1613,116 +1014,61 @@ function BlueprintStudioInner() {
 
   const deleteNodeById = (nodeId: string) => {
     const nextNodes = nodes.filter((node) => node.id !== nodeId);
-    const nextEdges = edges.filter(
-      (edge) => edge.source !== nodeId && edge.target !== nodeId,
-    );
+    const nextEdges = edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
     if (selectedNodeId === nodeId) setSelectedNodeId(null);
     setNodes(nextNodes);
     setEdges(nextEdges);
     persistCurrent(nextNodes, nextEdges);
   };
 
-  const deleteSelectedNode = () => {
-    if (!selectedNodeId) return;
-    deleteNodeById(selectedNodeId);
-  };
+  const deleteSelectedNode = () => { if (selectedNodeId) deleteNodeById(selectedNodeId); };
 
   const createBlueprint = () => {
-    const next = [
-      ...blueprints,
-      createStarterBlueprint(`Blueprint ${blueprints.length + 1}`),
-    ];
+    const next = [...blueprints, createStarterBlueprint(`Blueprint ${blueprints.length + 1}`)];
     setBlueprints(next);
     setSelectedBlueprintId(next[next.length - 1]?.id ?? "");
     saveBlueprints(next);
   };
 
-  const handleBlueprintFromChat = useCallback(
-    (blueprint: Blueprint) => {
-      const next = [...blueprints, blueprint];
-      setBlueprints(next);
-      setSelectedBlueprintId(blueprint.id);
-      saveBlueprints(next);
-      requestAnimationFrame(() => {
-        fitView({ duration: 260, padding: 0.24 });
-      });
-    },
-    [blueprints, fitView],
-  );
+  const handleBlueprintFromChat = useCallback((blueprint: Blueprint) => {
+    const next = [...blueprints, blueprint];
+    setBlueprints(next);
+    setSelectedBlueprintId(blueprint.id);
+    saveBlueprints(next);
+    requestAnimationFrame(() => { fitView({ duration: 260, padding: 0.24 }); });
+  }, [blueprints, fitView]);
 
-  const handleChatAddNode = useCallback(
-    (params: AddNodeParams) => {
-      const t = params.type as string;
-      const nodeType: FlowNodeType =
-        t === "input"
-          ? "inputNode"
-          : t === "decision"
-            ? "decisionNode"
-            : t === "comparison"
-              ? "comparisonNode"
-              : t === "market"
-                ? "marketNode"
-                : "outputNode";
+  const handleChatAddNode = useCallback((params: AddNodeParams) => {
+    const t = params.type as string;
+    const nodeType: FlowNodeType = t === "input" ? "inputNode" : t === "decision" ? "decisionNode" : t === "comparison" ? "comparisonNode" : t === "market" ? "marketNode" : "outputNode";
+    const inputType = "inputType" in params ? (params.inputType as string) : undefined;
+    const isCrypto = params.type === "input" && (inputType === "crypto_monitor" || inputType === "crypto_price");
 
-      const inputType = "inputType" in params ? (params.inputType as string) : undefined;
-      const isCrypto =
-        params.type === "input" &&
-        (inputType === "crypto_monitor" || inputType === "crypto_price");
+    const node: Node<FlowNodeData, FlowNodeType> = {
+      id: params.id, type: nodeType, position: { x: 0, y: 0 },
+      data: {
+        label: params.label,
+        inputs: "inputs" in params ? params.inputs : [],
+        outputs: "outputs" in params ? params.outputs : [],
+        ...("action" in params && params.action ? { action: params.action } : {}),
+        ...("inputType" in params && params.inputType ? { inputType: params.inputType } : {}),
+        ...(isCrypto && "cryptoMonitorConfig" in params && params.cryptoMonitorConfig ? { cryptoMonitorConfig: params.cryptoMonitorConfig } : {}),
+        ...("comparisonConfig" in params && params.comparisonConfig && typeof params.comparisonConfig === "object" && "operator" in (params.comparisonConfig as Record<string, unknown>) ? { comparisonConfig: params.comparisonConfig as { operator: ComparisonOperator } } : {}),
+      },
+    };
 
-      const node: Node<FlowNodeData, FlowNodeType> = {
-        id: params.id,
-        type: nodeType,
-        position: { x: 0, y: 0 }, // will be auto-laid out
-        data: {
-          label: params.label,
-          inputs: "inputs" in params ? params.inputs : [],
-          outputs: "outputs" in params ? params.outputs : [],
-          ...("action" in params && params.action ? { action: params.action } : {}),
-          ...("inputType" in params && params.inputType
-            ? { inputType: params.inputType }
-            : {}),
-          ...(isCrypto && "cryptoMonitorConfig" in params && params.cryptoMonitorConfig
-            ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
-            : {}),
-          ...("comparisonConfig" in params &&
-            params.comparisonConfig &&
-            typeof params.comparisonConfig === "object" &&
-            "operator" in (params.comparisonConfig as Record<string, unknown>)
-            ? { comparisonConfig: params.comparisonConfig as { operator: ComparisonOperator } }
-            : {}),
-        },
-      };
-
-      const nextNodes = [...nodesRef.current, node];
-      // Auto-layout all nodes when a new one is added at (0,0)
-      const laid = computeLayout(nextNodes, edgesRef.current);
-      setNodes(laid);
-      nodesRef.current = laid;
-      persistRef.current(laid, edgesRef.current);
-      requestAnimationFrame(() => {
-        fitView({ duration: 260, padding: 0.24 });
-      });
-    },
-    [fitView],
-  );
+    const nextNodes = [...nodesRef.current, node];
+    const laid = computeLayout(nextNodes, edgesRef.current);
+    setNodes(laid);
+    nodesRef.current = laid;
+    persistRef.current(laid, edgesRef.current);
+    requestAnimationFrame(() => { fitView({ duration: 260, padding: 0.24 }); });
+  }, [fitView]);
 
   const handleChatUpdateNode = useCallback((params: UpdateNodeParams) => {
     const nextNodes = nodesRef.current.map((node) => {
       if (node.id !== params.id) return node;
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          ...(params.label !== undefined ? { label: params.label } : {}),
-          ...(params.inputs !== undefined ? { inputs: params.inputs } : {}),
-          ...(params.outputs !== undefined ? { outputs: params.outputs } : {}),
-          ...(params.action !== undefined ? { action: params.action } : {}),
-          ...(params.inputType !== undefined ? { inputType: params.inputType } : {}),
-          ...(params.cryptoMonitorConfig !== undefined
-            ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
-            : {}),
-        },
-      };
+      return { ...node, data: { ...node.data, ...(params.label !== undefined ? { label: params.label } : {}), ...(params.inputs !== undefined ? { inputs: params.inputs } : {}), ...(params.outputs !== undefined ? { outputs: params.outputs } : {}), ...(params.action !== undefined ? { action: params.action } : {}), ...(params.inputType !== undefined ? { inputType: params.inputType } : {}), ...(params.cryptoMonitorConfig !== undefined ? { cryptoMonitorConfig: params.cryptoMonitorConfig } : {}) } };
     });
     setNodes(nextNodes);
     nodesRef.current = nextNodes;
@@ -1732,289 +1078,106 @@ function BlueprintStudioInner() {
 
   const handleChatDeleteNode = useCallback((id: string) => {
     const nextNodes = nodesRef.current.filter((n) => n.id !== id);
-    const nextEdges = edgesRef.current.filter(
-      (e) => e.source !== id && e.target !== id,
-    );
+    const nextEdges = edgesRef.current.filter((e) => e.source !== id && e.target !== id);
     if (selectedNodeId === id) setSelectedNodeId(null);
-    setNodes(nextNodes);
-    setEdges(nextEdges);
-    nodesRef.current = nextNodes;
-    edgesRef.current = nextEdges;
+    setNodes(nextNodes); setEdges(nextEdges);
+    nodesRef.current = nextNodes; edgesRef.current = nextEdges;
     persistRef.current(nextNodes, nextEdges);
   }, [selectedNodeId]);
 
   const handleChatAddEdge = useCallback((params: AddEdgeParams) => {
-    const edge: Edge = {
-      id: `edge-${params.source}-${params.target}-${Date.now()}`,
-      source: params.source,
-      target: params.target,
-      ...(params.sourceHandle ? { sourceHandle: params.sourceHandle } : {}),
-      ...(params.targetHandle ? { targetHandle: params.targetHandle } : {}),
-      type: "smoothstep",
-    };
+    const edge: Edge = { id: `edge-${params.source}-${params.target}-${Date.now()}`, source: params.source, target: params.target, ...(params.sourceHandle ? { sourceHandle: params.sourceHandle } : {}), ...(params.targetHandle ? { targetHandle: params.targetHandle } : {}), type: "smoothstep" };
     const nextEdges = addEdge(edge, edgesRef.current);
-    setEdges(nextEdges);
-    edgesRef.current = nextEdges;
+    setEdges(nextEdges); edgesRef.current = nextEdges;
     persistRef.current(nodesRef.current, nextEdges);
   }, []);
 
-  const handleChatDeleteEdge = useCallback(
-    (source: string, target: string, sourceHandle?: string) => {
-      const nextEdges = edgesRef.current.filter((e) => {
-        if (e.source !== source || e.target !== target) return true;
-        if (sourceHandle && e.sourceHandle !== sourceHandle) return true;
-        return false;
-      });
-      setEdges(nextEdges);
-      edgesRef.current = nextEdges;
-      persistRef.current(nodesRef.current, nextEdges);
-    },
-    [],
-  );
+  const handleChatDeleteEdge = useCallback((source: string, target: string, sourceHandle?: string) => {
+    const nextEdges = edgesRef.current.filter((e) => { if (e.source !== source || e.target !== target) return true; if (sourceHandle && e.sourceHandle !== sourceHandle) return true; return false; });
+    setEdges(nextEdges); edgesRef.current = nextEdges;
+    persistRef.current(nodesRef.current, nextEdges);
+  }, []);
 
-  const renameBlueprint = useCallback(
-    (name: string) => {
-      if (!selectedBlueprint) return;
-      const next = blueprints.map((blueprint) =>
-        blueprint.id === selectedBlueprint.id
-          ? { ...blueprint, name }
-          : blueprint,
-      );
-      setBlueprints(next);
-      saveBlueprints(next);
-    },
-    [selectedBlueprint, blueprints],
-  );
+  const renameBlueprint = useCallback((name: string) => {
+    if (!selectedBlueprint) return;
+    const next = blueprints.map((blueprint) => blueprint.id === selectedBlueprint.id ? { ...blueprint, name } : blueprint);
+    setBlueprints(next); saveBlueprints(next);
+  }, [selectedBlueprint, blueprints]);
 
-  const chatCallbacks = useMemo<BlueprintEditCallbacks>(
-    () => ({
-      onBlueprintGenerated: handleBlueprintFromChat,
-      onAddNode: handleChatAddNode,
-      onUpdateNode: handleChatUpdateNode,
-      onDeleteNode: handleChatDeleteNode,
-      onAddEdge: handleChatAddEdge,
-      onDeleteEdge: handleChatDeleteEdge,
-      onRenameBlueprint: renameBlueprint,
-    }),
-    [
-      handleBlueprintFromChat,
-      handleChatAddNode,
-      handleChatUpdateNode,
-      handleChatDeleteNode,
-      handleChatAddEdge,
-      handleChatDeleteEdge,
-      renameBlueprint,
-    ],
-  );
+  const chatCallbacks = useMemo<BlueprintEditCallbacks>(() => ({
+    onBlueprintGenerated: handleBlueprintFromChat, onAddNode: handleChatAddNode, onUpdateNode: handleChatUpdateNode, onDeleteNode: handleChatDeleteNode, onAddEdge: handleChatAddEdge, onDeleteEdge: handleChatDeleteEdge, onRenameBlueprint: renameBlueprint,
+  }), [handleBlueprintFromChat, handleChatAddNode, handleChatUpdateNode, handleChatDeleteNode, handleChatAddEdge, handleChatDeleteEdge, renameBlueprint]);
 
   const confirmDeleteBlueprint = () => {
     if (!deletingBlueprintId) return;
     const next = blueprints.filter((blueprint) => blueprint.id !== deletingBlueprintId);
     setBlueprints(next);
-    if (selectedBlueprintId === deletingBlueprintId) {
-      setSelectedBlueprintId(next[0]?.id ?? "");
-    }
+    if (selectedBlueprintId === deletingBlueprintId) { setSelectedBlueprintId(next[0]?.id ?? ""); }
     saveBlueprints(next);
     setDeletingBlueprintId(null);
   };
 
-  const nodeTypes = useMemo(
-    () => ({
-      inputNode: InputNode,
-      outputNode: OutputNode,
-      decisionNode: DecisionNode,
-      marketNode: MarketNode,
-      comparisonNode: ComparisonNode,
-      phantom: PhantomNode,
-    }),
-    [],
-  );
+  const nodeTypes = useMemo(() => ({ inputNode: InputNode, outputNode: OutputNode, decisionNode: DecisionNode, marketNode: MarketNode, comparisonNode: ComparisonNode, phantom: PhantomNode }), []);
 
-  // Inject a phantom node + temporary edge while the connection picker is open
   const { phantomNodes, phantomEdges } = useMemo(() => {
-    if (!contextMenu || contextMenu.type !== "connection") {
-      return { phantomNodes: [] as Node<FlowNodeData>[], phantomEdges: [] as Edge[] };
-    }
-    const phantomNode: Node<FlowNodeData> = {
-      id: PHANTOM_NODE_ID,
-      type: "phantom",
-      position: { x: contextMenu.flowX, y: contextMenu.flowY },
-      data: { label: "", inputs: [], outputs: [] },
-      style: { width: 1, height: 1, opacity: 0, pointerEvents: "none" },
-    };
-    const phantomEdge: Edge =
-      contextMenu.fromHandleType === "source"
-        ? {
-            id: PHANTOM_EDGE_ID,
-            source: contextMenu.fromNodeId,
-            target: PHANTOM_NODE_ID,
-            sourceHandle: contextMenu.fromHandleId,
-            type: "smoothstep",
-            animated: true,
-            style: { strokeDasharray: "6 3", opacity: 0.4 },
-          }
-        : {
-            id: PHANTOM_EDGE_ID,
-            source: PHANTOM_NODE_ID,
-            target: contextMenu.fromNodeId,
-            targetHandle: contextMenu.fromHandleId,
-            type: "smoothstep",
-            animated: true,
-            style: { strokeDasharray: "6 3", opacity: 0.4 },
-          };
+    if (!contextMenu || contextMenu.type !== "connection") return { phantomNodes: [] as Node<FlowNodeData>[], phantomEdges: [] as Edge[] };
+    const phantomNode: Node<FlowNodeData> = { id: PHANTOM_NODE_ID, type: "phantom", position: { x: contextMenu.flowX, y: contextMenu.flowY }, data: { label: "", inputs: [], outputs: [] }, style: { width: 1, height: 1, opacity: 0, pointerEvents: "none" } };
+    const phantomEdge: Edge = contextMenu.fromHandleType === "source"
+      ? { id: PHANTOM_EDGE_ID, source: contextMenu.fromNodeId, target: PHANTOM_NODE_ID, sourceHandle: contextMenu.fromHandleId, type: "smoothstep", animated: true, style: { strokeDasharray: "6 3", opacity: 0.4 } }
+      : { id: PHANTOM_EDGE_ID, source: PHANTOM_NODE_ID, target: contextMenu.fromNodeId, targetHandle: contextMenu.fromHandleId, type: "smoothstep", animated: true, style: { strokeDasharray: "6 3", opacity: 0.4 } };
     return { phantomNodes: [phantomNode], phantomEdges: [phantomEdge] };
   }, [contextMenu]);
 
   return (
     <div className="relative flex min-h-screen bg-[#0a0a0a] text-[#e0e0e0]">
       <aside className="relative z-10 flex w-[260px] flex-col border-r border-white/10 bg-[#0a0a0a]">
-        {/* Header */}
         <div className="flex items-center justify-between px-4 pb-2 pt-4">
           <h1 className="font-[family-name:var(--font-geist-mono)] text-xs font-semibold uppercase tracking-[0.2em] text-white/80">
             <span className="text-[#d4602c]">//</span> Blueprint Studio
           </h1>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 w-7 p-0 text-[#d4602c]/60 hover:text-[#d4602c]"
-            disabled={!selectedBlueprint || status !== "saved" || dispatching}
-            onClick={dispatchBlueprint}
-          >
-            {dispatching ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Play className="size-4" />
-            )}
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-[#d4602c]/60 hover:text-[#d4602c]" disabled={!selectedBlueprint || status !== "saved" || dispatching} onClick={dispatchBlueprint}>
+            {dispatching ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
           </Button>
         </div>
 
-        {/* New blueprint button */}
-        <button
-          onClick={createBlueprint}
-          className="mx-3 mb-1 flex items-center gap-2 px-2 py-2 font-[family-name:var(--font-geist-mono)] text-[11px] uppercase tracking-[0.15em] text-white/30 transition-colors hover:bg-white/5 hover:text-white/60"
-        >
+        <button onClick={createBlueprint} className="mx-3 mb-1 flex items-center gap-2 px-2 py-2 font-[family-name:var(--font-geist-mono)] text-[11px] uppercase tracking-[0.15em] text-white/30 transition-colors hover:bg-white/5 hover:text-white/60">
           <Plus className="size-4 text-[#d4602c]/60" />
           New blueprint
         </button>
 
-        {/* Blueprint list */}
         <div className="flex-1 overflow-y-auto px-2 py-1">
           {blueprints.map((blueprint) => {
             const selected = blueprint.id === selectedBlueprintId;
             return (
-              <div
-                key={blueprint.id}
-                onClick={() => {
-                  setSelectedBlueprintId(blueprint.id);
-                }}
-                className={`group relative flex cursor-pointer items-center px-2 py-2 text-sm transition-colors ${
-                  selected
-                    ? "border-l-2 border-[#d4602c] bg-white/[0.06] pl-[6px] text-white/90"
-                    : "text-white/40 hover:bg-white/[0.03] hover:text-white/60"
-                }`}
-              >
+              <div key={blueprint.id} onClick={() => setSelectedBlueprintId(blueprint.id)} className={`group relative flex cursor-pointer items-center px-2 py-2 text-sm transition-colors ${selected ? "border-l-2 border-[#d4602c] bg-white/[0.06] pl-[6px] text-white/90" : "text-white/40 hover:bg-white/[0.03] hover:text-white/60"}`}>
                 <span className="flex-1 truncate">{blueprint.name}</span>
                 <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        onClick={(e) => e.stopPropagation()}
-                        className={`ml-1 shrink-0 p-0.5 text-white/30 opacity-0 transition-opacity hover:text-white/80 group-hover:opacity-100 ${selected ? "opacity-100" : ""}`}
-                      >
-                        <Ellipsis className="size-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className={`w-40 ${DROPDOWN_CONTENT_CLASS}`}>
-                      <DropdownMenuItem
-                        className={DROPDOWN_ITEM_CLASS}
-                        onClick={() => {
-                          setSelectedBlueprintId(blueprint.id);
-                          setRenamingBlueprintId(blueprint.id);
-                        }}
-                      >
-                        <Pencil className="size-3 text-[#d4602c]" />
-                        Rename
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator className="bg-white/10" />
-                      <DropdownMenuItem
-                        className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
-                        onClick={() => setDeletingBlueprintId(blueprint.id)}
-                      >
-                        <Trash2 className="size-3" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
+                  <DropdownMenuTrigger asChild>
+                    <button onClick={(e) => e.stopPropagation()} className={`ml-1 shrink-0 p-0.5 text-white/30 opacity-0 transition-opacity hover:text-white/80 group-hover:opacity-100 ${selected ? "opacity-100" : ""}`}>
+                      <Ellipsis className="size-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className={`w-40 ${DROPDOWN_CONTENT_CLASS}`}>
+                    <DropdownMenuItem className={DROPDOWN_ITEM_CLASS} onClick={() => { setSelectedBlueprintId(blueprint.id); setRenamingBlueprintId(blueprint.id); }}>
+                      <Pencil className="size-3 text-[#d4602c]" /> Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-white/10" />
+                    <DropdownMenuItem className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS} onClick={() => setDeletingBlueprintId(blueprint.id)}>
+                      <Trash2 className="size-3" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
                 </DropdownMenu>
               </div>
             );
           })}
         </div>
 
-<<<<<<< HEAD
-        {/* Node Palette */}
-        <div className="border-t border-white/10 px-3 py-3">
-          <p className="mb-2 text-xs uppercase tracking-[0.18em] text-white/30">
-            Node Palette
-          </p>
-          <div className="grid grid-cols-1 gap-2">
-            <InputNodeDropdown
-              onSelect={(subType) =>
-                addNodeByType("inputNode", undefined, undefined, subType)
-              }
-            />
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("outputNode")}
-            >
-              Add Output
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("decisionNode")}
-            >
-              Add Decision
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("comparisonNode")}
-            >
-              Add Comparison
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => fitView({ duration: 260, padding: 0.24 })}
-            >
-              Recenter Graph
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const laid = computeLayout(nodes, edges);
-                setNodes(laid);
-                requestAnimationFrame(() => {
-                  fitView({ duration: 260, padding: 0.24 });
-                });
-              }}
-            >
-              Auto Layout
-            </Button>
-          </div>
-        </div>
-
-=======
->>>>>>> origin/main
-        {/* AI Chat */}
         <div className="mt-auto border-t border-white/10 px-3 py-3">
-          <Button
-            className="w-full"
-            size="sm"
-            variant={chatOpen ? "default" : "outline"}
-            onClick={() => setChatOpen((prev) => !prev)}
-          >
+          <Button className="w-full" size="sm" variant={chatOpen ? "default" : "outline"} onClick={() => setChatOpen((prev) => !prev)}>
             <MessageCircle className="size-4" />
             {chatOpen ? "Close AI Chat" : "AI Chat"}
           </Button>
         </div>
-
       </aside>
 
       <main className="relative z-10 flex min-h-screen flex-1">
@@ -2031,96 +1194,36 @@ function BlueprintStudioInner() {
             onConnectEnd={onConnectEnd}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
-            onNodeDragStart={(_event, node) => {
-              isDraggingNodeRef.current = true;
-              wasSelectedBeforeDragRef.current = selectedNodeId === node.id;
-            }}
+            onNodeDragStart={(_event, node) => { isDraggingNodeRef.current = true; wasSelectedBeforeDragRef.current = selectedNodeId === node.id; }}
             onNodeDragStop={(_event, node) => {
               setTimeout(() => {
-                if (!wasSelectedBeforeDragRef.current) {
-                  setSelectedNodeId(null);
-                  // Clear React Flow's internal selected state on the dragged node
-                  setNodes((nds) =>
-                    nds.map((n) =>
-                      n.id === node.id ? { ...n, selected: false } : n,
-                    ),
-                  );
-                }
+                if (!wasSelectedBeforeDragRef.current) { setSelectedNodeId(null); setNodes((nds) => nds.map((n) => n.id === node.id ? { ...n, selected: false } : n)); }
                 isDraggingNodeRef.current = false;
               }, 50);
             }}
-            onNodeClick={(_event, node) => {
-              if (isDraggingNodeRef.current) return;
-              setSelectedNodeId(node.id);
-              setContextMenu(null);
-            }}
-            onPaneClick={() => {
-              if (skipNextPaneClickRef.current) {
-                skipNextPaneClickRef.current = false;
-                return;
-              }
-              setSelectedNodeId(null);
-              setContextMenu(null);
-            }}
+            onNodeClick={(_event, node) => { if (isDraggingNodeRef.current) return; setSelectedNodeId(node.id); setContextMenu(null); }}
+            onPaneClick={() => { if (skipNextPaneClickRef.current) { skipNextPaneClickRef.current = false; return; } setSelectedNodeId(null); setContextMenu(null); }}
             onDoubleClick={(event) => {
-              // Only handle double-clicks on the canvas pane, not on nodes
               const target = event.target as HTMLElement;
               if (target.closest(".react-flow__node")) return;
               const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-              setContextMenu({
-                type: "pane",
-                screenX: event.clientX,
-                screenY: event.clientY,
-                flowX: flowPos.x,
-                flowY: flowPos.y,
-              });
+              setContextMenu({ type: "pane", screenX: event.clientX, screenY: event.clientY, flowX: flowPos.x, flowY: flowPos.y });
             }}
             onPaneContextMenu={(event) => {
               event.preventDefault();
               const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-              setContextMenu({
-                type: "pane",
-                screenX: event.clientX,
-                screenY: event.clientY,
-                flowX: flowPos.x,
-                flowY: flowPos.y,
-              });
+              setContextMenu({ type: "pane", screenX: event.clientX, screenY: event.clientY, flowX: flowPos.x, flowY: flowPos.y });
             }}
-            onNodeContextMenu={(event, node) => {
-              event.preventDefault();
-              setContextMenu({
-                type: "node",
-                screenX: event.clientX,
-                screenY: event.clientY,
-                nodeId: node.id,
-              });
-            }}
-            onMoveStart={() => {
-              if (skipNextPaneClickRef.current) {
-                skipNextPaneClickRef.current = false;
-                return;
-              }
-              // Keep connection picker open during pan — it tracks the viewport
-              setContextMenu((cur) =>
-                cur?.type === "connection" ? cur : null,
-              );
-            }}
-            panOnScroll
-            zoomOnScroll={false}
-            zoomOnDoubleClick={false}
-            snapToGrid
-            snapGrid={[GRID_SIZE, GRID_SIZE]}
-            fitView
+            onNodeContextMenu={(event, node) => { event.preventDefault(); setContextMenu({ type: "node", screenX: event.clientX, screenY: event.clientY, nodeId: node.id }); }}
+            onMoveStart={() => { if (skipNextPaneClickRef.current) { skipNextPaneClickRef.current = false; return; } setContextMenu((cur) => cur?.type === "connection" ? cur : null); }}
+            panOnScroll zoomOnScroll={false} zoomOnDoubleClick={false} snapToGrid snapGrid={[GRID_SIZE, GRID_SIZE]} fitView
           >
             <Background color="rgba(255,255,255,0.06)" gap={GRID_SIZE} />
             {validationErrors.length > 0 && (
               <Panel position="top-right">
                 <div className="space-y-1">
                   {validationErrors.map((error, i) => (
-                    <div
-                      key={`${error.code}-${error.nodeId ?? ""}-${i}`}
-                      className="flex items-center gap-2 border border-[#c45c5c]/30 bg-[#111314] px-3 py-1.5 text-xs text-[#c45c5c]"
-                    >
+                    <div key={`${error.code}-${error.nodeId ?? ""}-${i}`} className="flex items-center gap-2 border border-[#c45c5c]/30 bg-[#111314] px-3 py-1.5 text-xs text-[#c45c5c]">
                       <AlertCircle className="size-3.5 shrink-0" />
                       {error.message}
                     </div>
@@ -2133,78 +1236,34 @@ function BlueprintStudioInner() {
             <div className="pointer-events-none absolute left-3 top-3 z-10">
               <div className="pointer-events-auto flex items-center border border-white/10 bg-[#111314] shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
                 {renamingBlueprintId === selectedBlueprint.id ? (
-                  <Input
-                    ref={(el) => el?.focus()}
-                    className="h-9 w-56 border-none bg-transparent px-4 text-sm text-white/90 shadow-none focus-visible:ring-0"
-                    value={selectedBlueprint.name}
-                    onChange={(e) => renameBlueprint(e.target.value)}
-                    onBlur={() => {
-                      requestAnimationFrame(() => setRenamingBlueprintId(null));
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") setRenamingBlueprintId(null);
-                    }}
-                  />
+                  <Input ref={(el) => el?.focus()} className="h-9 w-56 border-none bg-transparent px-4 text-sm text-white/90 shadow-none focus-visible:ring-0" value={selectedBlueprint.name} onChange={(e) => renameBlueprint(e.target.value)} onBlur={() => requestAnimationFrame(() => setRenamingBlueprintId(null))} onKeyDown={(e) => { if (e.key === "Enter") setRenamingBlueprintId(null); }} />
                 ) : (
-                  <button
-                    className="cursor-text py-2 pl-4 pr-1 text-sm font-medium text-white/90"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setRenamingBlueprintId(selectedBlueprint.id);
-                    }}
-                  >
+                  <button className="cursor-text py-2 pl-4 pr-1 text-sm font-medium text-white/90" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setRenamingBlueprintId(selectedBlueprint.id); }}>
                     {selectedBlueprint.name}
                   </button>
                 )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="flex items-center justify-center p-2 text-white/40 transition-colors hover:text-white/80">
-                      <ChevronDown className="size-4" />
-                    </button>
+                    <button className="flex items-center justify-center p-2 text-white/40 transition-colors hover:text-white/80"><ChevronDown className="size-4" /></button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className={`w-40 ${DROPDOWN_CONTENT_CLASS}`}>
-                    <DropdownMenuItem
-                      className={DROPDOWN_ITEM_CLASS}
-                      onClick={() => setRenamingBlueprintId(selectedBlueprint.id)}
-                    >
-                      <Pencil className="size-3 text-[#d4602c]" />
-                      Rename
+                    <DropdownMenuItem className={DROPDOWN_ITEM_CLASS} onClick={() => setRenamingBlueprintId(selectedBlueprint.id)}>
+                      <Pencil className="size-3 text-[#d4602c]" /> Rename
                     </DropdownMenuItem>
                     <DropdownMenuSeparator className="bg-white/10" />
-                    <DropdownMenuItem
-                      className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
-                      onClick={() => setDeletingBlueprintId(selectedBlueprint.id)}
-                    >
-                      <Trash2 className="size-3" />
-                      Delete
+                    <DropdownMenuItem className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS} onClick={() => setDeletingBlueprintId(selectedBlueprint.id)}>
+                      <Trash2 className="size-3" /> Delete
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
             </div>
           )}
-          {selectedNode && (
-            <FloatingNodeToolbar
-              node={selectedNode}
-              errors={validationErrors}
-              onUpdate={updateSelectedNode}
-              onDelete={deleteSelectedNode}
-            />
-          )}
+          {selectedNode && <FloatingNodeToolbar node={selectedNode} errors={validationErrors} onUpdate={updateSelectedNode} onDelete={deleteSelectedNode} />}
           {contextMenu && contextMenu.type === "connection" ? (
-            <ConnectionNodePicker
-              menu={contextMenu}
-              onAddNode={addNodeByType}
-              onClose={() => setContextMenu(null)}
-            />
+            <ConnectionNodePicker menu={contextMenu} onAddNode={addNodeByType} onClose={() => setContextMenu(null)} />
           ) : contextMenu ? (
-            <CanvasContextMenu
-              menu={contextMenu}
-              onAddNode={addNodeByType}
-              onDeleteNode={deleteNodeById}
-              onClose={() => setContextMenu(null)}
-            />
+            <CanvasContextMenu menu={contextMenu} onAddNode={addNodeByType} onDeleteNode={deleteNodeById} onClose={() => setContextMenu(null)} />
           ) : null}
         </div>
       </main>
@@ -2212,115 +1271,58 @@ function BlueprintStudioInner() {
       {activeRedprint && (
         <aside className="relative z-10 w-[300px] border-l border-white/10 bg-[#0a0a0a] p-4 overflow-y-auto">
           <div className="mb-3 flex items-center justify-between">
-            <p className="font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.18em] text-white/30">
-              Redprint
-            </p>
-            <span
-              className={`px-2 py-0.5 font-[family-name:var(--font-geist-mono)] text-[10px] font-medium uppercase tracking-wider ${
-                activeRedprint.status === "running"
-                  ? "bg-[#d4602c]/20 text-[#d4602c]"
-                  : activeRedprint.status === "completed"
-                    ? "bg-emerald-500/20 text-emerald-400"
-                    : "bg-[#c45c5c]/20 text-[#c45c5c]"
-              }`}
-            >
+            <p className="font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.18em] text-white/30">Redprint</p>
+            <span className={`px-2 py-0.5 font-[family-name:var(--font-geist-mono)] text-[10px] font-medium uppercase tracking-wider ${activeRedprint.status === "running" ? "bg-[#d4602c]/20 text-[#d4602c]" : activeRedprint.status === "completed" ? "bg-emerald-500/20 text-emerald-400" : "bg-[#c45c5c]/20 text-[#c45c5c]"}`}>
               {activeRedprint.status}
             </span>
           </div>
-
           <p className="mb-3 text-sm text-white/90">{activeRedprint.name}</p>
-
           <div className="space-y-2">
             {activeRedprint.nodes.map((node) => (
-              <div
-                key={node.name}
-                className="flex items-center justify-between border border-white/10 bg-[#111314] px-3 py-2"
-              >
+              <div key={node.name} className="flex items-center justify-between border border-white/10 bg-[#111314] px-3 py-2">
                 <div>
                   <p className="text-xs text-white/90">{node.label ?? node.name}</p>
-                  <p className="font-[family-name:var(--font-geist-mono)] text-[10px] text-white/30">
-                    {node.role} &middot; {node.status}
-                  </p>
-                  {node.firedAt && (
-                    <p className="font-[family-name:var(--font-geist-mono)] text-[10px] text-white/50">
-                      {new Date(node.firedAt).toLocaleTimeString()}
-                    </p>
-                  )}
+                  <p className="font-[family-name:var(--font-geist-mono)] text-[10px] text-white/30">{node.role} &middot; {node.status}</p>
+                  {node.firedAt && <p className="font-[family-name:var(--font-geist-mono)] text-[10px] text-white/50">{new Date(node.firedAt).toLocaleTimeString()}</p>}
                 </div>
-                {node.role === "producer" &&
-                  activeRedprint.status === "running" &&
-                  (node.inputType === "crypto_monitor" ? (
+                {node.role === "producer" && activeRedprint.status === "running" && (
+                  node.inputType === "crypto_monitor" ? (
                     <div className="text-right">
-                      <p className="text-[10px] text-[#e8a838]">
-                        <TrendingUp className="mr-0.5 inline size-3" />
-                        {node.status === "fired" ? "Triggered" : "Monitoring"}
-                      </p>
-                      {node.lastPrice !== undefined && (
-                        <p className="text-[10px] text-white/40">
-                          ${node.lastPrice.toLocaleString()}
-                        </p>
-                      )}
+                      <p className="text-[10px] text-[#e8a838]"><TrendingUp className="mr-0.5 inline size-3" />{node.status === "fired" ? "Triggered" : "Monitoring"}</p>
+                      {node.lastPrice !== undefined && <p className="text-[10px] text-white/40">${node.lastPrice.toLocaleString()}</p>}
                     </div>
                   ) : (
-                    <button
-                      className="border border-white/10 px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.1em] text-[#d4602c] hover:bg-white/5"
-                      onClick={() => pushEvent(node.name)}
-                    >
+                    <button className="border border-white/10 px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.1em] text-[#d4602c] hover:bg-white/5" onClick={() => pushEvent(node.name)}>
                       <Zap className="inline size-3" /> Push
                     </button>
-                  ))}
+                  )
+                )}
               </div>
             ))}
           </div>
-
           {activeRedprint.decision && (
             <div className="mt-3 border border-[#d4602c]/30 bg-[#d4602c]/10 px-3 py-2">
-              <p className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-wider text-[#d4602c]">
-                Decision Result
-              </p>
-              <p className="text-sm font-semibold text-white/90">
-                {activeRedprint.decision.verb} on{" "}
-                {activeRedprint.decision.market_id}
-              </p>
+              <p className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-wider text-[#d4602c]">Decision Result</p>
+              <p className="text-sm font-semibold text-white/90">{activeRedprint.decision.verb} on {activeRedprint.decision.token_id}</p>
             </div>
           )}
-
-          <Button
-            className="mt-4 w-full"
-            variant="outline"
-            onClick={teardownRedprint}
-          >
-            <Square className="size-4" />
-            Teardown
+          <Button className="mt-4 w-full" variant="outline" onClick={teardownRedprint}>
+            <Square className="size-4" /> Teardown
           </Button>
         </aside>
       )}
 
-      <BlueprintChat
-        key={selectedBlueprintId}
-        blueprintId={selectedBlueprintId}
-        currentBlueprint={selectedBlueprint}
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        callbacks={chatCallbacks}
-      />
+      <BlueprintChat key={selectedBlueprintId} blueprintId={selectedBlueprintId} currentBlueprint={selectedBlueprint} open={chatOpen} onClose={() => setChatOpen(false)} callbacks={chatCallbacks} />
 
-      <AlertDialog
-        open={!!deletingBlueprintId}
-        onOpenChange={(open: boolean) => { if (!open) setDeletingBlueprintId(null); }}
-      >
+      <AlertDialog open={!!deletingBlueprintId} onOpenChange={(open: boolean) => { if (!open) setDeletingBlueprintId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete blueprint?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the blueprint.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This action cannot be undone. This will permanently delete the blueprint.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteBlueprint}>
-              Delete
-            </AlertDialogAction>
+            <AlertDialogAction onClick={confirmDeleteBlueprint}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

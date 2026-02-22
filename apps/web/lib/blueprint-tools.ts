@@ -65,12 +65,6 @@ const decisionNodeSchema = z.object({
   outputs: z
     .array(z.string())
     .describe("Branch names, e.g. ['bullish', 'bearish']"),
-  action: z.object({
-    verb: z.enum(["buy", "sell"]),
-    market_id: z
-      .string()
-      .describe("Polymarket condition ID or market slug"),
-  }),
 });
 
 const outputNodeSchema = z.object({
@@ -80,6 +74,13 @@ const outputNodeSchema = z.object({
   inputs: z
     .array(z.string())
     .describe("Topics this node consumes, e.g. ['topic.orders']"),
+  action: z.object({
+    verb: z.enum(["buy", "sell"]),
+    token_id: z
+      .string()
+      .describe("Polymarket token ID for the trade"),
+    amount: z.number().describe("Trade amount in USD"),
+  }),
 });
 
 const comparisonNodeSchema = z.object({
@@ -142,10 +143,11 @@ const updateNodeSchema = z.object({
   action: z
     .object({
       verb: z.enum(["buy", "sell"]),
-      market_id: z.string(),
+      token_id: z.string(),
+      amount: z.number(),
     })
     .optional()
-    .describe("Updated action for decision nodes"),
+    .describe("Updated action for output nodes"),
   inputType: z
     .enum(["manual_trigger", "crypto_monitor", "crypto_price"])
     .optional()
@@ -177,7 +179,7 @@ export const blueprintTools = {
       "Create a complete blueprint with nodes and edges. " +
       "Use this when the user wants a brand-new blueprint from scratch. " +
       "Node positions are auto-computed — do not include position data. " +
-      "There must be exactly one decision node with an action (verb + market_id). " +
+      "There must be exactly one decision node. Output nodes must have an action (verb + token_id + amount). " +
       "Every edge from a decision node must include a sourceHandle matching one of its branch names.",
     inputSchema: blueprintInputSchema,
   }),

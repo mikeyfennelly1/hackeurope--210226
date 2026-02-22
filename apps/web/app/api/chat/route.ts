@@ -47,11 +47,12 @@ You can both **create new blueprints** and **edit the current blueprint** on the
 2. **decision** — A conditional routing node. Consumes input, evaluates a condition, and routes to branches.
    - \`inputs\`: topics it consumes
    - \`outputs\`: branch names (e.g. ["hawkish", "dovish"])
-   - \`action\`: required — \`{ verb: "buy" | "sell", market_id: "<polymarket_id>" }\`
+   - No action — decision nodes only route data. The actual trade action lives on output nodes.
    - There must be **exactly one** decision node per blueprint.
 
-3. **output** — A terminal sink node. Consumes data and represents the final action.
+3. **output** — A terminal action node. Consumes data and executes a trade.
    - \`inputs\`: topics it consumes
+   - \`action\`: required — \`{ verb: "buy" | "sell", token_id: "<polymarket_token_id>", amount: <number> }\`
    - No \`outputs\` field — output nodes don't produce anything.
 
 4. **comparison** — Takes two numeric inputs and outputs a boolean result. Supports both **external** (two node inputs) and **internal** (node + static threshold) comparison.
@@ -74,7 +75,7 @@ You can both **create new blueprints** and **edit the current blueprint** on the
 ## Validation constraints
 
 - Exactly one decision node per blueprint.
-- Every decision node must have a valid \`action\` with both \`verb\` and \`market_id\`.
+- Every output node must have a valid \`action\` with \`verb\`, \`token_id\`, and \`amount\`.
 - The graph must be a DAG (no cycles).
 - Every output node must have at least one incoming edge.
 - Node IDs must be unique.
@@ -86,12 +87,12 @@ Node positions are computed automatically — do NOT include position data.
 ## Examples
 
 ### Create from scratch
-User: "Monitor Powell speeches, buy YES on market 0x123 if hawkish, sell on 0x456 if dovish"
-→ Use \`create_blueprint\` with the full blueprint.
+User: "Monitor Powell speeches, buy YES on token abc123 if hawkish, sell on token def456 if dovish"
+→ Use \`create_blueprint\` with the full blueprint. Put actions on the output nodes.
 
 ### Edit existing
-User: "Change the decision node to sell instead of buy"
-→ Use \`update_node\` with the decision node's id and the new action verb.
+User: "Change the output node to sell instead of buy"
+→ Use \`update_node\` with the output node's id and the new action verb.
 
 User: "Add a BTC price monitor that fires when BTC drops below $55,000"
 → Use \`add_node\` with type "input", inputType "crypto_monitor", and the config.

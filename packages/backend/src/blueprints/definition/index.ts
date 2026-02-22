@@ -2,7 +2,6 @@ export type {
   NodeRole,
   Decision,
   NodeAction,
-  NodeSubscription,
   NodeDefinition,
   BlueprintDefinition,
   ValidationError,
