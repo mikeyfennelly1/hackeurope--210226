@@ -82,7 +82,7 @@ import { Input } from "@/components/ui/input";
 import { BlueprintChat, type BlueprintEditCallbacks } from "@/components/blueprint-chat";
 import type { AddNodeParams, UpdateNodeParams, AddEdgeParams } from "@/lib/blueprint-tools";
 import { CryptoMonitorNode } from "@/components/crypto-monitor-node";
-import { MarketNode } from "@/components/market-node";
+import { MarketNode, MARKET_OUTPUT_IDS } from "@/components/market-node";
 import { PulseProvider } from "@/components/pulse-context";
 import { PulseEdge } from "@/components/pulse-edge";
 import { computeLayout, GRID_SIZE } from "@/lib/auto-layout";
@@ -1421,9 +1421,11 @@ function BlueprintStudioInner() {
         outputs:
           type === "decisionNode"
             ? ["branch-a", "branch-b"]
-            : type === "outputNode" || type === "marketNode" || type === "comparisonNode"
-              ? []
-              : ["topic.orders"],
+            : type === "marketNode"
+              ? [...MARKET_OUTPUT_IDS]
+              : type === "outputNode" || type === "comparisonNode"
+                ? []
+                : ["topic.orders"],
         ...(type === "inputNode"
           ? { inputType: inputSubType ?? "manual_trigger" }
           : {}),

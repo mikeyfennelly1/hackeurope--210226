@@ -1,5 +1,5 @@
-import type { CryptoMonitorConfig, Decision, InputNodeType } from "./definition/types";
-export type { CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType } from "./definition/types";
+import type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType } from "./definition/types";
+export type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType } from "./definition/types";
 export { toDefinition } from "./convert";
 
 export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison";

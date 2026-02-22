@@ -1,4 +1,4 @@
-export type InputNodeType = "manual_trigger" | "crypto_monitor";
+export type InputNodeType = "manual_trigger" | "crypto_monitor" | "crypto_price";
 
 export type CryptoConditionOperator = "drops_below" | "rises_above";
 
@@ -13,16 +13,6 @@ export type NodeRole = "producer" | "consumer" | "hybrid" | "decision";
 export type ComparisonOperator = ">" | "<" | ">=" | "<=" | "==" | "!=";
 
 export type Decision = "buy" | "sell";
-
-export type InputNodeType = "manual_trigger" | "crypto_monitor";
-
-export type CryptoConditionOperator = "drops_below" | "rises_above";
-
-export interface CryptoMonitorConfig {
-  readonly symbol: string;
-  readonly condition: CryptoConditionOperator;
-  readonly targetPrice: number;
-}
 
 export interface NodeAction {
   readonly verb: Decision;
@@ -42,7 +32,7 @@ export interface NodeDefinition {
   readonly subscribesTo?: readonly (string | SubscriptionRef)[];
   /** Required for consumer (output) nodes. Declares the market action to execute. */
   readonly action?: NodeAction;
-  readonly inputType?: InputNodeType | "crypto_price";
+  readonly inputType?: InputNodeType;
   readonly cryptoMonitorConfig?: CryptoMonitorConfig;
   readonly comparisonConfig?: {
     readonly operator: ComparisonOperator;

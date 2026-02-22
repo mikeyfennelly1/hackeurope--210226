@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
-import { ChevronDown } from "lucide-react";
 import type { FlowNodeData } from "./blueprint-studio";
 import { usePulse } from "./pulse-context";
 
@@ -34,6 +33,16 @@ type GammaEvent = {
   liquidity: number;
   markets: GammaMarket[];
 };
+
+const MARKET_OUTPUT_HANDLES = [
+  { id: "price", label: "PRICE" },
+  { id: "volume", label: "VOLUME" },
+  { id: "liquidity", label: "LIQUIDITY" },
+  { id: "spread", label: "SPREAD" },
+  { id: "lastTrade", label: "LAST TRADE" },
+] as const;
+
+export const MARKET_OUTPUT_IDS = MARKET_OUTPUT_HANDLES.map((h) => h.id);
 
 type PricePoint = { t: number; p: number };
 
@@ -160,12 +169,6 @@ function formatCurrency(value: number): string {
   return `$${value.toFixed(0)}`;
 }
 
-function formatPercent(value: number): string {
-  const pct = value * 100;
-  const sign = pct >= 0 ? "+" : "";
-  return `${sign}${pct.toFixed(1)}%`;
-}
-
 function Sparkline({ data, width, height }: { data: PricePoint[]; width: number; height: number }) {
   if (data.length < 2) return null;
 
@@ -228,7 +231,6 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
   const { pulseNode } = usePulse();
   const { setNodes } = useReactFlow();
   const [fetchState, setFetchState] = useState<FetchState>({ status: "idle" });
-  const [specsOpen, setSpecsOpen] = useState(false);
   const [marketInterval, setMarketInterval] = useState<MarketInterval>("all");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
@@ -458,18 +460,13 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
             </div>
             <div className="h-20 w-full animate-pulse rounded bg-white/[0.05]" />
           </div>
-          {/* Specs skeleton */}
-          <div className="border-b border-white/10">
-            <div className="flex items-center justify-between px-3 py-1.5">
+          {/* Output sockets skeleton */}
+          {MARKET_OUTPUT_HANDLES.map((output) => (
+            <div key={output.id} className="flex items-center justify-between border-t border-white/[0.06] px-3 py-1">
+              <div className="h-2.5 w-14 animate-pulse rounded bg-white/10" />
               <div className="h-2.5 w-10 animate-pulse rounded bg-white/10" />
-              <div className="size-3 animate-pulse rounded bg-white/10" />
             </div>
-          </div>
-          {/* Footer skeleton */}
-          <div className="flex items-center justify-between px-3 py-2">
-            <div className="h-2.5 w-28 animate-pulse rounded bg-white/10" />
-            <div className="h-2.5 w-14 animate-pulse rounded bg-white/10" />
-          </div>
+          ))}
         </div>
       )}
 
@@ -578,78 +575,85 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
             )}
           </div>
 
-          {/* Collapsible spec table */}
-          <div className="border-b border-white/10">
-            <button
-              className="flex w-full items-center justify-between bg-white/[0.03] px-3 py-1.5 text-left"
-              onClick={() => setSpecsOpen((o) => !o)}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <span className="text-[8px] uppercase tracking-[0.25em] text-white/30">SPECS</span>
-              <ChevronDown
-                className={`size-3 text-white/30 transition-transform ${specsOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-            {specsOpen && (
-              <div>
-                {[
-                  ["VOLUME", formatCurrency(parseFloat(market.volume))],
-                  ["LIQUIDITY", formatCurrency(parseFloat(market.liquidity))],
-                  ["24H CHANGE", formatPercent(market.oneDayPriceChange)],
-                  ["SPREAD", `$${((liveBestAsk ?? market.bestAsk) - (liveBestBid ?? market.bestBid)).toFixed(3)}`],
-                  ["LAST TRADE", `${Math.round((yesPrice || market.lastTradePrice) * 100)}\u00a2`],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="flex border-t border-white/[0.04]"
-                  >
-                    <div className="flex-1 px-3 py-1 text-[9px] uppercase tracking-[0.15em] text-white/50">
-                      {label}
-                    </div>
-                    <div
-                      className={`w-[100px] px-2 py-1 text-right text-[10px] font-medium tracking-[0.05em] ${
-                        label === "24H CHANGE"
-                          ? market.oneDayPriceChange >= 0
-                            ? "text-[#d4602c]"
-                            : "text-white/60"
-                          : "text-white/70"
-                      }`}
-                    >
-                      {value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        </div>
+      )}
 
-          {/* Footer — expiry + active status */}
-          <div className="flex items-center justify-between px-3 py-2">
-            {market.endDate && (
-              <span className="text-[8px] uppercase tracking-[0.2em] text-white/25">
-                EXPIRES {new Date(market.endDate).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                }).toUpperCase()}
-              </span>
-            )}
-            <span
-              className={`flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.2em] ${
-                market.active && !market.closed
-                  ? "text-[#d4602c]"
-                  : "text-white/30"
-              }`}
+      {/* Output sockets */}
+      <div>
+        {MARKET_OUTPUT_HANDLES.map((output) => {
+          let value: string | undefined;
+          if (fetchState.status === "loaded" && market) {
+            switch (output.id) {
+              case "price": {
+                const sel = (data.marketOutcome ?? "yes") === "yes" ? yesPrice : noPrice;
+                value = `${Math.round(sel * 100)}\u00a2`;
+                break;
+              }
+              case "volume":
+                value = formatCurrency(parseFloat(market.volume));
+                break;
+              case "liquidity":
+                value = formatCurrency(parseFloat(market.liquidity));
+                break;
+              case "spread":
+                value = `$${((liveBestAsk ?? market.bestAsk) - (liveBestBid ?? market.bestBid)).toFixed(3)}`;
+                break;
+              case "lastTrade":
+                value = `${Math.round((yesPrice || market.lastTradePrice) * 100)}\u00a2`;
+                break;
+            }
+          }
+          return (
+            <div
+              key={output.id}
+              className="relative flex items-center justify-between border-t border-white/[0.06] px-3 py-1"
             >
-              {market.active && !market.closed && (
-                <span className="relative flex size-1.5">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#d4602c] opacity-75" />
-                  <span className="relative inline-flex size-1.5 rounded-full bg-[#d4602c]" />
+              <span className="text-[9px] uppercase tracking-[0.15em] text-white/30">
+                {output.label}
+              </span>
+              {value && (
+                <span className="mr-3 text-[10px] font-medium tracking-[0.05em] text-white/50">
+                  {value}
                 </span>
               )}
-              {market.active && !market.closed ? "ACTIVE" : "CLOSED"}
+              <Handle
+                id={output.id}
+                type="source"
+                position={Position.Right}
+                style={{ top: "50%" }}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Active status */}
+      {fetchState.status === "loaded" && market && (
+        <div className="flex items-center justify-between border-t border-white/[0.06] px-3 py-1.5">
+          {market.endDate && (
+            <span className="text-[8px] uppercase tracking-[0.2em] text-white/25">
+              {new Date(market.endDate).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              }).toUpperCase()}
             </span>
-          </div>
+          )}
+          <span
+            className={`ml-auto flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.2em] ${
+              market.active && !market.closed
+                ? "text-[#d4602c]"
+                : "text-white/30"
+            }`}
+          >
+            {market.active && !market.closed && (
+              <span className="relative flex size-1.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#d4602c] opacity-75" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-[#d4602c]" />
+              </span>
+            )}
+            {market.active && !market.closed ? "ACTIVE" : "CLOSED"}
+          </span>
         </div>
       )}
 
@@ -660,8 +664,6 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
           backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.1) 2px, rgba(255,255,255,0.1) 3px)",
         }}
       />
-
-      <Handle type="source" position={Position.Right} />
     </div>
   );
 }
