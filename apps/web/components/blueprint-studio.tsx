@@ -28,10 +28,12 @@ import {
   BlueprintUtils,
   toDefinition,
   type Blueprint,
+  type ComparisonOperator,
   type CryptoConditionOperator,
   type CryptoMonitorConfig,
   type Decision,
   type InputNodeType,
+  type MarketOutcome,
 } from "@repo/backend/blueprints";
 import {
   AlertCircle,
@@ -47,6 +49,7 @@ import {
   Play,
   Plus,
   Square,
+  Scale,
   Trash2,
   TrendingUp,
   Zap,
@@ -85,7 +88,7 @@ import { computeLayout, GRID_SIZE } from "@/lib/auto-layout";
 const STORAGE_KEY = "blueprints:v1";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-type FlowNodeType = "inputNode" | "outputNode" | "decisionNode" | "marketNode";
+type FlowNodeType = "inputNode" | "outputNode" | "decisionNode" | "marketNode" | "comparisonNode";
 
 export type FlowNodeData = {
   label: string;
@@ -96,6 +99,8 @@ export type FlowNodeData = {
   inputType?: InputNodeType;
   cryptoMonitorConfig?: CryptoMonitorConfig;
   marketSlug?: string;
+  comparisonConfig?: { operator: ComparisonOperator; thresholdA?: number; thresholdB?: number };
+  marketOutcome?: MarketOutcome;
 };
 
 type RedprintNodeState = {
@@ -195,6 +200,7 @@ function toFlowNodeType(
   if (type === "input") return "inputNode";
   if (type === "output") return "outputNode";
   if (type === "market") return "marketNode";
+  if (type === "comparison") return "comparisonNode";
   return "decisionNode";
 }
 
@@ -204,6 +210,7 @@ function toBlueprintNodeType(
   if (type === "inputNode") return "input";
   if (type === "outputNode") return "output";
   if (type === "marketNode") return "market";
+  if (type === "comparisonNode") return "comparison";
   return "decision";
 }
 
@@ -222,6 +229,8 @@ function blueprintToFlow(blueprint: Blueprint): {
       action: node.action,
       inputType: node.inputType,
       cryptoMonitorConfig: node.cryptoMonitorConfig,
+      comparisonConfig: node.comparisonConfig,
+      marketOutcome: node.marketOutcome,
     },
   }));
 
@@ -261,6 +270,12 @@ function flowToBlueprint(
       ...(node.data.inputType ? { inputType: node.data.inputType } : {}),
       ...(node.data.cryptoMonitorConfig
         ? { cryptoMonitorConfig: node.data.cryptoMonitorConfig }
+        : {}),
+      ...(node.data.comparisonConfig
+        ? { comparisonConfig: node.data.comparisonConfig }
+        : {}),
+      ...(node.data.marketOutcome
+        ? { marketOutcome: node.data.marketOutcome }
         : {}),
     })),
     edges: edges.map((edge) => ({
@@ -382,27 +397,81 @@ function BaseNode({
   );
 }
 
+<<<<<<< HEAD
+function InputNode({ data, selected }: NodeProps<Node<FlowNodeData, "inputNode">>) {
+  const isCryptoMonitor = data.inputType === "crypto_monitor";
+  const isCryptoPrice = data.inputType === "crypto_price";
+  const isCrypto = isCryptoMonitor || isCryptoPrice;
+=======
 function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
   const { data, selected } = props;
   if (data.inputType === "crypto_monitor") {
     return <CryptoMonitorNode {...props} />;
   }
+>>>>>>> origin/main
 
   return (
     <BaseNode
       label={data.label}
+<<<<<<< HEAD
+      subtitle={isCryptoMonitor ? "Crypto Monitor" : isCryptoPrice ? "Crypto Price" : "Manual Trigger"}
+      icon={
+        isCrypto ? (
+          <TrendingUp className="size-3.5 text-[#e8a838]" />
+        ) : (
+          <Zap className="size-3.5" />
+        )
+      }
+=======
       subtitle="Manual Trigger"
       icon={<Zap className="size-3.5" />}
+>>>>>>> origin/main
       hasError={data.hasError}
       selected={selected}
     >
       <Handle type="source" position={Position.Right} />
+<<<<<<< HEAD
+      {isCryptoMonitor && data.cryptoMonitorConfig ? (
+        <div className="space-y-0.5">
+          <p className="text-[11px] font-medium text-[#e8a838]">
+            {data.cryptoMonitorConfig.symbol}
+          </p>
+          {data.cryptoMonitorConfig.targetPrice > 0 && (
+            <p className="text-[11px] text-white/40">
+              {data.cryptoMonitorConfig.condition === "drops_below"
+                ? "Drops below"
+                : "Rises above"}{" "}
+              ${data.cryptoMonitorConfig.targetPrice.toLocaleString()}
+            </p>
+          )}
+        </div>
+      ) : isCryptoPrice && data.cryptoMonitorConfig ? (
+        <div className="space-y-0.5">
+          <p className="text-[11px] font-medium text-[#e8a838]">
+            {data.cryptoMonitorConfig.symbol}
+          </p>
+          <p className="text-[10px] text-white/40">
+            Live price stream
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
+            Publishes
+          </div>
+          <p className="mt-0.5 text-[10px] text-white/50">
+            {data.outputs.join(", ") || "none"}
+          </p>
+        </>
+      )}
+=======
       <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
         Publishes
       </div>
       <p className="mt-0.5 text-[10px] text-white/50">
         {data.outputs.join(", ") || "none"}
       </p>
+>>>>>>> origin/main
     </BaseNode>
   );
 }
@@ -466,6 +535,40 @@ function DecisionNode({ data, selected }: NodeProps<Node<FlowNodeData, "decision
   );
 }
 
+function ComparisonNode({ data, selected }: NodeProps<Node<FlowNodeData, "comparisonNode">>) {
+  const op = data.comparisonConfig?.operator ?? ">";
+  const thA = data.comparisonConfig?.thresholdA;
+  const thB = data.comparisonConfig?.thresholdB;
+  const labelA = thA !== undefined ? `$${thA.toLocaleString()}` : "A";
+  const labelB = thB !== undefined ? `$${thB.toLocaleString()}` : "B";
+  return (
+    <BaseNode
+      label={data.label}
+      subtitle="Comparison"
+      icon={<Scale className="size-3.5" />}
+      hasError={data.hasError}
+      selected={selected}
+    >
+      <Handle type="target" position={Position.Left} id="input-a" style={{ top: "35%" }} />
+      <Handle type="target" position={Position.Left} id="input-b" style={{ top: "65%" }} />
+      <Handle type="source" position={Position.Right} />
+      {(thA !== undefined || thB !== undefined) && (
+        <div className="mb-0.5 flex justify-between text-[9px]">
+          {thA !== undefined && <span className="text-[#e8a838]">A = ${thA.toLocaleString()}</span>}
+          {thB !== undefined && <span className="ml-auto text-[#e8a838]">B = ${thB.toLocaleString()}</span>}
+        </div>
+      )}
+      <div className="flex items-center justify-center py-1">
+        <span className="text-[20px] font-bold leading-none text-[#d4602c]">{op}</span>
+      </div>
+      <div className="flex justify-between text-[9px] text-white/30">
+        <span>{labelA} {op} {labelB}</span>
+        <span className="text-[#d4602c]/60">bool</span>
+      </div>
+    </BaseNode>
+  );
+}
+
 function PhantomNode() {
   return (
     <div>
@@ -518,6 +621,7 @@ function FloatingNodeToolbar({
     node.type === "inputNode" ? "INPUT"
     : node.type === "outputNode" ? "OUTPUT"
     : node.type === "decisionNode" ? "DECISION"
+    : node.type === "comparisonNode" ? "COMPARISON"
     : "MARKET";
 
   return (
@@ -585,6 +689,31 @@ function FloatingNodeToolbar({
                 }
                 placeholder="topic.orders, topic.events"
               />
+            </ToolbarField>
+          )}
+
+          {/* Input node: crypto price fields (symbol only) */}
+          {node.type === "inputNode" && node.data.inputType === "crypto_price" && (
+            <ToolbarField label="Symbol">
+              <select
+                className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                value={node.data.cryptoMonitorConfig?.symbol ?? "BTCUSDT"}
+                onChange={(e) =>
+                  onUpdate({
+                    cryptoMonitorConfig: {
+                      symbol: e.target.value,
+                      condition: "drops_below" as CryptoConditionOperator,
+                      targetPrice: 0,
+                    },
+                  })
+                }
+              >
+                <option value="BTCUSDT">BTC / USDT</option>
+                <option value="ETHUSDT">ETH / USDT</option>
+                <option value="SOLUSDT">SOL / USDT</option>
+                <option value="DOGEUSDT">DOGE / USDT</option>
+                <option value="XRPUSDT">XRP / USDT</option>
+              </select>
             </ToolbarField>
           )}
 
@@ -746,16 +875,91 @@ function FloatingNodeToolbar({
             </>
           )}
 
-          {/* Market node: slug */}
+          {/* Market node: slug + outcome */}
           {node.type === "marketNode" && (
-            <ToolbarField label="Event Slug">
-              <Input
-                className="h-6 w-56 text-[11px]"
-                value={node.data.marketSlug ?? ""}
-                onChange={(e) => onUpdate({ marketSlug: e.target.value })}
-                placeholder="e.g. kraken-ipo-in-2025"
-              />
-            </ToolbarField>
+            <>
+              <ToolbarField label="Event Slug">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  value={node.data.marketSlug ?? ""}
+                  onChange={(e) => onUpdate({ marketSlug: e.target.value })}
+                  placeholder="e.g. kraken-ipo-in-2025"
+                />
+              </ToolbarField>
+              <ToolbarField label="Outcome Price">
+                <select
+                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                  value={node.data.marketOutcome ?? "yes"}
+                  onChange={(e) =>
+                    onUpdate({ marketOutcome: e.target.value as MarketOutcome })
+                  }
+                >
+                  <option value="yes">YES price</option>
+                  <option value="no">NO price</option>
+                </select>
+              </ToolbarField>
+            </>
+          )}
+
+          {/* Comparison node: operator + thresholds */}
+          {node.type === "comparisonNode" && (
+            <>
+              <ToolbarField label="Operator">
+                <select
+                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                  value={node.data.comparisonConfig?.operator ?? ">"}
+                  onChange={(e) =>
+                    onUpdate({
+                      comparisonConfig: {
+                        ...node.data.comparisonConfig,
+                        operator: e.target.value as ComparisonOperator,
+                      },
+                    })
+                  }
+                >
+                  <option value=">">&gt; Greater than</option>
+                  <option value="<">&lt; Less than</option>
+                  <option value=">=">&gt;= Greater or equal</option>
+                  <option value="<=">&lt;= Less or equal</option>
+                  <option value="==">== Equal</option>
+                  <option value="!=">!= Not equal</option>
+                </select>
+              </ToolbarField>
+              <ToolbarField label="Threshold A (static value)">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  type="number"
+                  value={node.data.comparisonConfig?.thresholdA ?? ""}
+                  onChange={(e) =>
+                    onUpdate({
+                      comparisonConfig: {
+                        ...node.data.comparisonConfig,
+                        operator: node.data.comparisonConfig?.operator ?? ">",
+                        thresholdA: e.target.value ? parseFloat(e.target.value) : undefined,
+                      },
+                    })
+                  }
+                  placeholder="Leave empty if connected"
+                />
+              </ToolbarField>
+              <ToolbarField label="Threshold B (static value)">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  type="number"
+                  value={node.data.comparisonConfig?.thresholdB ?? ""}
+                  onChange={(e) =>
+                    onUpdate({
+                      comparisonConfig: {
+                        ...node.data.comparisonConfig,
+                        operator: node.data.comparisonConfig?.operator ?? ">",
+                        thresholdB: e.target.value ? parseFloat(e.target.value) : undefined,
+                      },
+                    })
+                  }
+                  placeholder="Leave empty if connected"
+                />
+              </ToolbarField>
+            </>
           )}
         </div>
       </div>
@@ -778,8 +982,17 @@ type NodeOption = {
   hasSource: boolean;
 };
 
+<<<<<<< HEAD
+const ALL_NODE_OPTIONS: NodeOption[] = [
+  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
+  { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
+  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
+  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
+  { type: "comparisonNode", label: "Comparison", icon: <Scale className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
+=======
 const INPUT_NODE_OPTIONS: NodeOption[] = [
   { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
+>>>>>>> origin/main
   { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
 ];
 
@@ -949,6 +1162,66 @@ function CanvasContextMenu({
   );
 }
 
+<<<<<<< HEAD
+function InputNodeDropdown({
+  onSelect,
+}: {
+  onSelect: (subType: InputNodeType) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as globalThis.Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <Button
+        variant="secondary"
+        className="w-full"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <Plus className="size-4" />
+        Add Input
+      </Button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-full border border-white/10 bg-[#111314] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+          <button
+            className={DROPDOWN_ITEM_CLASS}
+            onClick={() => {
+              onSelect("crypto_monitor");
+              setOpen(false);
+            }}
+          >
+            <TrendingUp className="size-3 text-[#e8a838]" />
+            Crypto Monitor
+          </button>
+          <button
+            className={DROPDOWN_ITEM_CLASS}
+            onClick={() => {
+              onSelect("crypto_price");
+              setOpen(false);
+            }}
+          >
+            <TrendingUp className="size-3 text-[#e8a838]" />
+            Crypto Price
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+=======
+>>>>>>> origin/main
 function BlueprintStudioInner() {
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string>("");
@@ -1177,27 +1450,37 @@ function BlueprintStudioInner() {
         : { x: center.x, y: center.y };
     }
 
-    const isCrypto = type === "inputNode" && inputSubType === "crypto_monitor";
+    const isCryptoMonitor = type === "inputNode" && inputSubType === "crypto_monitor";
+    const isCryptoPrice = type === "inputNode" && inputSubType === "crypto_price";
+    const isCrypto = isCryptoMonitor || isCryptoPrice;
     const id = `${type}-${Date.now()}`;
     const node: Node<FlowNodeData, FlowNodeType> = {
       id,
       type,
       position,
       data: {
-        label: isCrypto
+        label: isCryptoMonitor
           ? "BTC Price Monitor"
-          : type === "decisionNode"
-            ? "New Decision"
-            : type === "inputNode"
-              ? "New Input"
-              : type === "marketNode"
-                ? "Market"
-                : "New Output",
-        inputs: type === "inputNode" || type === "marketNode" ? [] : ["topic.orders"],
+          : isCryptoPrice
+            ? "BTC Price"
+            : type === "decisionNode"
+              ? "New Decision"
+              : type === "inputNode"
+                ? "New Input"
+                : type === "comparisonNode"
+                  ? "Compare"
+                  : type === "marketNode"
+                    ? "Market"
+                    : "New Output",
+        inputs: type === "inputNode" || type === "marketNode"
+          ? []
+          : type === "comparisonNode"
+            ? ["input-a", "input-b"]
+            : ["topic.orders"],
         outputs:
           type === "decisionNode"
             ? ["branch-a", "branch-b"]
-            : type === "outputNode" || type === "marketNode"
+            : type === "outputNode" || type === "marketNode" || type === "comparisonNode"
               ? []
               : ["topic.orders"],
         ...(type === "inputNode"
@@ -1211,6 +1494,9 @@ function BlueprintStudioInner() {
                 targetPrice: 0,
               },
             }
+          : {}),
+        ...(type === "comparisonNode"
+          ? { comparisonConfig: { operator: ">" as ComparisonOperator } }
           : {}),
         ...(type === "marketNode" ? { marketSlug: "" } : {}),
       },
@@ -1366,15 +1652,22 @@ function BlueprintStudioInner() {
 
   const handleChatAddNode = useCallback(
     (params: AddNodeParams) => {
+      const t = params.type as string;
       const nodeType: FlowNodeType =
-        params.type === "input"
+        t === "input"
           ? "inputNode"
-          : params.type === "decision"
+          : t === "decision"
             ? "decisionNode"
-            : "outputNode";
+            : t === "comparison"
+              ? "comparisonNode"
+              : t === "market"
+                ? "marketNode"
+                : "outputNode";
 
+      const inputType = "inputType" in params ? (params.inputType as string) : undefined;
       const isCrypto =
-        params.type === "input" && "inputType" in params && params.inputType === "crypto_monitor";
+        params.type === "input" &&
+        (inputType === "crypto_monitor" || inputType === "crypto_price");
 
       const node: Node<FlowNodeData, FlowNodeType> = {
         id: params.id,
@@ -1390,6 +1683,12 @@ function BlueprintStudioInner() {
             : {}),
           ...(isCrypto && "cryptoMonitorConfig" in params && params.cryptoMonitorConfig
             ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
+            : {}),
+          ...("comparisonConfig" in params &&
+            params.comparisonConfig &&
+            typeof params.comparisonConfig === "object" &&
+            "operator" in (params.comparisonConfig as Record<string, unknown>)
+            ? { comparisonConfig: params.comparisonConfig as { operator: ComparisonOperator } }
             : {}),
         },
       };
@@ -1450,6 +1749,7 @@ function BlueprintStudioInner() {
       source: params.source,
       target: params.target,
       ...(params.sourceHandle ? { sourceHandle: params.sourceHandle } : {}),
+      ...(params.targetHandle ? { targetHandle: params.targetHandle } : {}),
       type: "smoothstep",
     };
     const nextEdges = addEdge(edge, edgesRef.current);
@@ -1524,6 +1824,7 @@ function BlueprintStudioInner() {
       outputNode: OutputNode,
       decisionNode: DecisionNode,
       marketNode: MarketNode,
+      comparisonNode: ComparisonNode,
       phantom: PhantomNode,
     }),
     [],
@@ -1648,6 +1949,59 @@ function BlueprintStudioInner() {
           })}
         </div>
 
+<<<<<<< HEAD
+        {/* Node Palette */}
+        <div className="border-t border-white/10 px-3 py-3">
+          <p className="mb-2 text-xs uppercase tracking-[0.18em] text-white/30">
+            Node Palette
+          </p>
+          <div className="grid grid-cols-1 gap-2">
+            <InputNodeDropdown
+              onSelect={(subType) =>
+                addNodeByType("inputNode", undefined, undefined, subType)
+              }
+            />
+            <Button
+              variant="secondary"
+              onClick={() => addNodeByType("outputNode")}
+            >
+              Add Output
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => addNodeByType("decisionNode")}
+            >
+              Add Decision
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => addNodeByType("comparisonNode")}
+            >
+              Add Comparison
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => fitView({ duration: 260, padding: 0.24 })}
+            >
+              Recenter Graph
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const laid = computeLayout(nodes, edges);
+                setNodes(laid);
+                requestAnimationFrame(() => {
+                  fitView({ duration: 260, padding: 0.24 });
+                });
+              }}
+            >
+              Auto Layout
+            </Button>
+          </div>
+        </div>
+
+=======
+>>>>>>> origin/main
         {/* AI Chat */}
         <div className="mt-auto border-t border-white/10 px-3 py-3">
           <Button

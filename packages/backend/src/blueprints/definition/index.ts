@@ -7,6 +7,7 @@ export type {
   BlueprintDefinition,
   ValidationError,
   ValidationResult,
+  ComparisonOperator,
 } from "./types.js";
 
 export { BlueprintUtils } from "./validate.js";

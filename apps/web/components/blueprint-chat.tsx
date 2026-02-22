@@ -55,6 +55,9 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
       ...("cryptoMonitorConfig" in node && node.cryptoMonitorConfig
         ? { cryptoMonitorConfig: node.cryptoMonitorConfig }
         : {}),
+      ...("comparisonConfig" in node && node.comparisonConfig
+        ? { comparisonConfig: node.comparisonConfig }
+        : {}),
     });
   }
 
@@ -64,6 +67,7 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
       source: edge.source,
       target: edge.target,
       ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+      ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
     });
   }
 
@@ -80,6 +84,16 @@ function blueprintToContext(bp: Blueprint): string {
     if (n.cryptoMonitorConfig) {
       const c = n.cryptoMonitorConfig;
       parts.push(`cryptoMonitorConfig={symbol:"${c.symbol}", condition:"${c.condition}", targetPrice:${c.targetPrice}}`);
+    }
+    if (n.comparisonConfig) {
+      const cc = n.comparisonConfig;
+      const ccParts = [`operator:"${cc.operator}"`];
+      if (cc.thresholdA !== undefined) ccParts.push(`thresholdA:${cc.thresholdA}`);
+      if (cc.thresholdB !== undefined) ccParts.push(`thresholdB:${cc.thresholdB}`);
+      parts.push(`comparisonConfig={${ccParts.join(", ")}}`);
+    }
+    if (n.marketOutcome) {
+      parts.push(`marketOutcome="${n.marketOutcome}"`);
     }
     return `  - ${parts.join(" ")}`;
   });

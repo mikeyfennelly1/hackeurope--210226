@@ -20,7 +20,7 @@ function detectCycle(nodes: readonly NodeDefinition[]): string[] | null {
   }
   for (const node of nodes) {
     for (const dep of node.subscribesTo ?? []) {
-      adj.get(dep.node)?.push(node.name);
+      adj.get(dep)?.push(node.name);
     }
   }
 
@@ -66,10 +66,10 @@ export const BlueprintUtils = {
       const node = blueprint.nodes[i]!;
       for (let j = 0; j < (node.subscribesTo?.length ?? 0); j++) {
         const ref = node.subscribesTo![j]!;
-        if (!nodeNames.has(ref.node)) {
+        if (!nodeNames.has(ref)) {
           errors.push({
             path: `nodes[${i}].subscribesTo[${j}]`,
-            message: `References non-existent node "${ref.node}"`,
+            message: `References non-existent node "${ref}"`,
           });
         }
       }
@@ -78,7 +78,7 @@ export const BlueprintUtils = {
     const consumedNodes = new Set<string>();
     for (const node of blueprint.nodes) {
       for (const dep of node.subscribesTo ?? []) {
-        consumedNodes.add(dep.node);
+        consumedNodes.add(dep);
       }
     }
 
@@ -121,7 +121,7 @@ export const BlueprintUtils = {
       const subscribedTo = new Set<string>();
       for (const node of blueprint.nodes) {
         for (const dep of node.subscribesTo ?? []) {
-          subscribedTo.add(dep.node);
+          subscribedTo.add(dep);
         }
       }
 
@@ -168,6 +168,35 @@ export const BlueprintUtils = {
           errors.push({
             path: `nodes`,
             message: `Consumer node "${consumer.name}" action must have a positive amount`,
+          });
+        }
+      }
+    }
+
+    // Comparison node validation
+    for (let i = 0; i < blueprint.nodes.length; i++) {
+      const node = blueprint.nodes[i]!;
+      if (node.comparisonConfig) {
+        if (!node.comparisonConfig.operator) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `Comparison node "${node.name}" must have an operator`,
+          });
+        }
+        const subCount = node.subscribesTo?.length ?? 0;
+        const hasThA = node.comparisonConfig.thresholdA !== undefined;
+        const hasThB = node.comparisonConfig.thresholdB !== undefined;
+        const totalInputs = subCount + (hasThA ? 1 : 0) + (hasThB ? 1 : 0);
+        if (totalInputs < 2) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `Comparison node "${node.name}" needs 2 inputs — use upstream nodes and/or set thresholds (has ${totalInputs})`,
+          });
+        }
+        if (subCount > 2) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `Comparison node "${node.name}" has too many upstream subscriptions (${subCount}, max 2)`,
           });
         }
       }

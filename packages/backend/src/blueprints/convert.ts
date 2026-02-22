@@ -32,25 +32,46 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
       role = "producer";
     } else if (node.type === "decision") {
       role = "decision";
+    } else if (node.type === "comparison") {
+      role = "hybrid";
+    } else if (node.type === "market") {
+      role = "producer";
     } else {
       // "output" nodes: hybrid if they have outgoing edges, consumer otherwise
       role = hasOutgoing.has(node.id) ? "hybrid" : "consumer";
     }
 
     // subscribesTo = IDs of nodes with edges pointing into this node
-    const subscribesTo = incomingEdges.get(node.id);
+    let subscribesTo = incomingEdges.get(node.id);
+
+    // For comparison nodes, ensure input-a comes before input-b in subscribesTo
+    if (node.type === "comparison" && subscribesTo && subscribesTo.length === 2) {
+      const edgesForNode = blueprint.edges.filter((e) => e.target === node.id);
+      const sorted = [...edgesForNode].sort((a, b) => {
+        if (a.targetHandle === "input-a") return -1;
+        if (b.targetHandle === "input-a") return 1;
+        return 0;
+      });
+      subscribesTo = sorted.map((e) => e.source);
+    }
 
     const def: NodeDefinition = {
       name: node.id,
       label: node.label,
       role,
       ...(subscribesTo && subscribesTo.length > 0
-        ? { subscribesTo: subscribesTo.map((node) => ({ node, requiredValue: true })) }
+        ? { subscribesTo }
         : {}),
       ...(node.action ? { action: node.action } : {}),
       ...(node.inputType ? { inputType: node.inputType } : {}),
       ...(node.cryptoMonitorConfig
         ? { cryptoMonitorConfig: node.cryptoMonitorConfig }
+        : {}),
+      ...(node.comparisonConfig
+        ? { comparisonConfig: node.comparisonConfig }
+        : {}),
+      ...(node.type === "market" && node.marketSlug
+        ? { marketConfig: { slug: node.marketSlug, outcome: node.marketOutcome ?? "yes" } }
         : {}),
     };
 

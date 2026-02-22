@@ -2,7 +2,27 @@ import type { Decision } from "./definition/types";
 export type { Decision } from "./definition/types";
 export { toDefinition } from "./convert";
 
-export type BlueprintNodeType = "input" | "output" | "decision";
+export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison";
+
+export type InputNodeType = "manual_trigger" | "crypto_monitor" | "crypto_price";
+
+export type CryptoConditionOperator = "drops_below" | "rises_above";
+
+export type ComparisonOperator = ">" | "<" | ">=" | "<=" | "==" | "!=";
+
+export type ComparisonConfig = {
+  operator: ComparisonOperator;
+  thresholdA?: number;
+  thresholdB?: number;
+};
+
+export type MarketOutcome = "yes" | "no";
+
+export type CryptoMonitorConfig = {
+  symbol: string;
+  condition: CryptoConditionOperator;
+  targetPrice: number;
+};
 
 export type BlueprintNode = {
   id: string;
@@ -15,6 +35,11 @@ export type BlueprintNode = {
   inputs: string[];
   outputs: string[];
   action?: { verb: Decision; token_id: string; amount: number };
+  inputType?: InputNodeType;
+  cryptoMonitorConfig?: CryptoMonitorConfig;
+  comparisonConfig?: ComparisonConfig;
+  marketSlug?: string;
+  marketOutcome?: MarketOutcome;
 };
 
 export type BlueprintEdge = {
@@ -40,7 +65,10 @@ export type ValidationErrorCode =
   | "Cycle detected"
   | "Missing terminal output"
   | "Disconnected output"
-  | "Output missing action";
+  | "Output missing action"
+  | "Crypto monitor missing config"
+  | "Comparison missing operator"
+  | "Comparison wrong input count";
 
 export type ValidationError = {
   code: ValidationErrorCode;
@@ -287,6 +315,53 @@ export const BlueprintUtils = {
           message: `Output node '${node.label}' must have an action with verb, token_id, and amount`,
           nodeId: node.id,
         });
+      }
+    }
+
+    for (const node of blueprint.nodes) {
+      if (
+        node.type === "input" &&
+        node.inputType === "crypto_monitor" &&
+        (!node.cryptoMonitorConfig?.symbol ||
+          !node.cryptoMonitorConfig?.condition ||
+          !node.cryptoMonitorConfig?.targetPrice ||
+          node.cryptoMonitorConfig.targetPrice <= 0)
+      ) {
+        errors.push({
+          code: "Crypto monitor missing config",
+          message: `Crypto monitor node '${node.label}' must have a symbol, condition, and positive target price`,
+          nodeId: node.id,
+        });
+      }
+    }
+
+    for (const node of blueprint.nodes) {
+      if (node.type === "comparison") {
+        if (!node.comparisonConfig?.operator) {
+          errors.push({
+            code: "Comparison missing operator",
+            message: `Comparison node '${node.label}' must have an operator configured`,
+            nodeId: node.id,
+          });
+        }
+        const incomingCount = blueprint.edges.filter((e) => e.target === node.id).length;
+        const hasThresholdA = node.comparisonConfig?.thresholdA !== undefined;
+        const hasThresholdB = node.comparisonConfig?.thresholdB !== undefined;
+        const totalInputs = incomingCount + (hasThresholdA ? 1 : 0) + (hasThresholdB ? 1 : 0);
+        if (totalInputs < 2) {
+          errors.push({
+            code: "Comparison wrong input count",
+            message: `Comparison node '${node.label}' needs 2 inputs — use incoming connections and/or set threshold values (has ${totalInputs})`,
+            nodeId: node.id,
+          });
+        }
+        if (incomingCount > 2) {
+          errors.push({
+            code: "Comparison wrong input count",
+            message: `Comparison node '${node.label}' has too many incoming connections (${incomingCount}, max 2)`,
+            nodeId: node.id,
+          });
+        }
       }
     }
 

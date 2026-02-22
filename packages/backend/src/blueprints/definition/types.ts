@@ -1,5 +1,7 @@
 export type NodeRole = "producer" | "consumer" | "hybrid" | "decision";
 
+export type ComparisonOperator = ">" | "<" | ">=" | "<=" | "==" | "!=";
+
 export type Decision = "buy" | "sell";
 
 export interface NodeAction {
@@ -15,6 +17,21 @@ export interface NodeDefinition {
   readonly subscribesTo?: readonly string[];
   /** Required for consumer (output) nodes. Declares the market action to execute. */
   readonly action?: NodeAction;
+  readonly inputType?: "manual_trigger" | "crypto_monitor" | "crypto_price";
+  readonly cryptoMonitorConfig?: {
+    readonly symbol: string;
+    readonly condition: "drops_below" | "rises_above";
+    readonly targetPrice: number;
+  };
+  readonly comparisonConfig?: {
+    readonly operator: ComparisonOperator;
+    readonly thresholdA?: number;
+    readonly thresholdB?: number;
+  };
+  readonly marketConfig?: {
+    readonly slug: string;
+    readonly outcome: "yes" | "no";
+  };
 }
 
 export interface BlueprintDefinition {
