@@ -1,0 +1,40 @@
+meta {
+  name: Dispatch Redprint
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/redprints
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "eth_price_check",
+    "nodes": [
+      {
+        "name": "eth_exceeds_price_x",
+        "role": "producer"
+      },
+      {
+        "name": "decision",
+        "role": "decision",
+        "subscribesTo": [{ "node": "eth_exceeds_price_x", "requiredValue": true }],
+        "action": {
+          "verb": "buy",
+          "market_id": "ETH-USD"
+        }
+      }
+    ]
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("redprintId", res.body.id);
+  }
+}
