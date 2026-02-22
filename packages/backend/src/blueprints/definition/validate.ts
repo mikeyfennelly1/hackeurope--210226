@@ -20,7 +20,7 @@ function detectCycle(nodes: readonly NodeDefinition[]): string[] | null {
   }
   for (const node of nodes) {
     for (const dep of node.subscribesTo ?? []) {
-      adj.get(dep)?.push(node.name);
+      adj.get(dep.node)?.push(node.name);
     }
   }
 
@@ -66,10 +66,10 @@ export const BlueprintUtils = {
       const node = blueprint.nodes[i]!;
       for (let j = 0; j < (node.subscribesTo?.length ?? 0); j++) {
         const ref = node.subscribesTo![j]!;
-        if (!nodeNames.has(ref)) {
+        if (!nodeNames.has(ref.node)) {
           errors.push({
             path: `nodes[${i}].subscribesTo[${j}]`,
-            message: `References non-existent node "${ref}"`,
+            message: `References non-existent node "${ref.node}"`,
           });
         }
       }
@@ -78,7 +78,7 @@ export const BlueprintUtils = {
     const consumedNodes = new Set<string>();
     for (const node of blueprint.nodes) {
       for (const dep of node.subscribesTo ?? []) {
-        consumedNodes.add(dep);
+        consumedNodes.add(dep.node);
       }
     }
 
@@ -121,7 +121,7 @@ export const BlueprintUtils = {
       const subscribedTo = new Set<string>();
       for (const node of blueprint.nodes) {
         for (const dep of node.subscribesTo ?? []) {
-          subscribedTo.add(dep);
+          subscribedTo.add(dep.node);
         }
       }
 

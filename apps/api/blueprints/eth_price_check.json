@@ -1,0 +1,18 @@
+{
+  "name": "eth_price_check",
+  "nodes": [
+    {
+      "name": "eth_exceeds_price_x",
+      "role": "producer"
+    },
+    {
+      "name": "decision",
+      "role": "decision",
+      "subscribesTo": [{ "node": "eth_exceeds_price_x", "requiredValue": true }],
+      "action": {
+        "verb": "buy",
+        "market_id": "ETH-USD"
+      }
+    }
+  ]
+}

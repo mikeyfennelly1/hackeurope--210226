@@ -7,11 +7,16 @@ export interface NodeAction {
   readonly market_id: string;
 }
 
+export interface NodeSubscription {
+  readonly node: string;
+  readonly requiredValue: boolean;
+}
+
 export interface NodeDefinition {
   readonly name: string;
   readonly label?: string;
   readonly role: NodeRole;
-  readonly subscribesTo?: readonly string[];
+  readonly subscribesTo?: readonly NodeSubscription[];
   /** Required for decision nodes. Declares the market action to execute. */
   readonly action?: NodeAction;
   readonly inputType?: "manual_trigger" | "crypto_monitor";
