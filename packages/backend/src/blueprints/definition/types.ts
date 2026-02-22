@@ -7,6 +7,20 @@ export interface NodeAction {
   readonly market_id: string;
 }
 
+export type XMonitorType =
+  | "keyword_match"
+  | "sentiment_analysis"
+  | "account_monitor";
+
+export interface XMonitorConfig {
+  readonly monitorType: XMonitorType;
+  readonly account?: string;
+  readonly keywords?: string[];
+  readonly sentimentTarget?: "positive" | "negative";
+  readonly topic?: string;
+  readonly pollIntervalSeconds?: number;
+}
+
 export interface NodeDefinition {
   readonly name: string;
   readonly label?: string;
@@ -14,12 +28,13 @@ export interface NodeDefinition {
   readonly subscribesTo?: readonly string[];
   /** Required for decision nodes. Declares the market action to execute. */
   readonly action?: NodeAction;
-  readonly inputType?: "manual_trigger" | "crypto_monitor";
+  readonly inputType?: "manual_trigger" | "crypto_monitor" | "x_monitor";
   readonly cryptoMonitorConfig?: {
     readonly symbol: string;
     readonly condition: "drops_below" | "rises_above";
     readonly targetPrice: number;
   };
+  readonly xMonitorConfig?: XMonitorConfig;
 }
 
 export interface BlueprintDefinition {

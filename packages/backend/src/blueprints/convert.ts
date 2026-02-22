@@ -50,6 +50,9 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
       ...(node.cryptoMonitorConfig
         ? { cryptoMonitorConfig: node.cryptoMonitorConfig }
         : {}),
+      ...(node.xMonitorConfig
+        ? { xMonitorConfig: node.xMonitorConfig }
+        : {}),
     };
 
     return def;

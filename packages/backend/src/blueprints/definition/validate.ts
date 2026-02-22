@@ -161,6 +161,38 @@ export const BlueprintUtils = {
       }
     }
 
+    // Validate X monitor config
+    for (let i = 0; i < blueprint.nodes.length; i++) {
+      const node = blueprint.nodes[i]!;
+      if (
+        node.role === "producer" &&
+        node.inputType === "x_monitor"
+      ) {
+        const cfg = node.xMonitorConfig;
+        if (!cfg?.monitorType) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `X monitor node "${node.name}" must have a monitor type`,
+          });
+        } else if (cfg.monitorType === "keyword_match" && (!cfg.keywords || cfg.keywords.length === 0)) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `Keyword match node "${node.name}" must have at least one keyword`,
+          });
+        } else if (cfg.monitorType === "sentiment_analysis" && !cfg.sentimentTarget) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `Sentiment analysis node "${node.name}" must have a sentiment target`,
+          });
+        } else if (cfg.monitorType === "account_monitor" && !cfg.account) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `Account monitor node "${node.name}" must have an account handle`,
+          });
+        }
+      }
+    }
+
     return errors.length > 0 ? fail(errors) : ok();
   },
 };

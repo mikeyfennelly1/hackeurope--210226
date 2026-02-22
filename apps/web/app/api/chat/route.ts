@@ -36,6 +36,27 @@ You can both **create new blueprints** and **edit the current blueprint** on the
       - \`cryptoMonitorConfig\`: required — \`{ symbol: "BTCUSDT", condition: "drops_below" | "rises_above", targetPrice: 60000 }\`
       - Supported symbols: BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, XRPUSDT
 
+   c. **x_monitor** — Monitors X (Twitter) via RSS polling and auto-fires when a condition is met. Outputs true/false like all input nodes.
+      - \`inputType\`: "x_monitor"
+      - \`outputs\`: topics it publishes
+      - \`xMonitorConfig\`: required — has three monitor modes:
+
+        **keyword_match** — Fires when a tweet matches keywords.
+        \`{ monitorType: "keyword_match", account: "elonmusk", keywords: ["doge coin", "dogecoin"] }\`
+        - \`account\` is optional — if omitted, searches all of X for the keywords.
+
+        **sentiment_analysis** — Uses Gemini AI to analyze tweet sentiment. Fires when sentiment matches target.
+        \`{ monitorType: "sentiment_analysis", account: "elonmusk", sentimentTarget: "positive" }\`
+        - \`account\` is required for sentiment analysis.
+        - \`sentimentTarget\`: "positive" or "negative"
+
+        **account_monitor** — Fires when a specific account posts a new tweet. Optionally filtered by topic.
+        \`{ monitorType: "account_monitor", account: "ABOROSCOPE", topic: "executive order" }\`
+        - \`account\` is required.
+        - \`topic\` is optional — if set, only fires when the tweet mentions that topic.
+
+        All modes support optional \`pollIntervalSeconds\` (default 60).
+
    No \`inputs\` field — input nodes don't consume anything.
 
 2. **decision** — A conditional routing node. Consumes input, evaluates a condition, and routes to branches.
@@ -84,6 +105,12 @@ User: "Remove the output node called Trade Executed"
 
 User: "Connect crypto-1 to decision-1"
 → Use \`add_edge\` with source "crypto-1" and target "decision-1".
+
+User: "Add a monitor that fires when Elon Musk tweets about doge coin"
+→ Use \`add_node\` with type "input", inputType "x_monitor", and xMonitorConfig with monitorType "keyword_match", account "elonmusk", keywords ["doge coin", "dogecoin"].
+
+User: "Monitor the White House account and fire when sentiment is negative"
+→ Use \`add_node\` with type "input", inputType "x_monitor", and xMonitorConfig with monitorType "sentiment_analysis", account "WhiteHouse", sentimentTarget "negative".
 
 User: "Rename this blueprint to BTC Trading Strategy"
 → Use \`rename_blueprint\` with the new name.

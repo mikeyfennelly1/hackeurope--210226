@@ -32,6 +32,8 @@ import {
   type CryptoMonitorConfig,
   type Decision,
   type InputNodeType,
+  type XMonitorConfig,
+  type XMonitorType,
 } from "@repo/backend/blueprints";
 import {
   AlertCircle,
@@ -45,6 +47,7 @@ import {
   Play,
   Plus,
   Square,
+  AtSign,
   Trash2,
   TrendingUp,
   Zap,
@@ -91,6 +94,7 @@ type FlowNodeData = {
   hasError?: boolean;
   inputType?: InputNodeType;
   cryptoMonitorConfig?: CryptoMonitorConfig;
+  xMonitorConfig?: XMonitorConfig;
 };
 
 type RedprintNodeState = {
@@ -101,6 +105,7 @@ type RedprintNodeState = {
   firedAt?: string;
   inputType?: string;
   lastPrice?: number;
+  lastTweet?: string;
 };
 
 type RedprintJSON = {
@@ -116,7 +121,7 @@ type ApiRedprintResponse = {
   id: string;
   blueprintName: string;
   status: string;
-  nodes: Record<string, { label?: string; role: string; status: string; output: unknown; firedAt: string | null; inputType?: string; lastPrice?: number }>;
+  nodes: Record<string, { label?: string; role: string; status: string; output: unknown; firedAt: string | null; inputType?: string; lastPrice?: number; lastTweet?: string }>;
   decision: { verb: string; market_id: string } | null;
   createdAt: string;
 };
@@ -134,6 +139,7 @@ function apiResponseToRedprint(raw: ApiRedprintResponse): RedprintJSON {
       firedAt: state.firedAt ?? undefined,
       inputType: state.inputType,
       lastPrice: state.lastPrice,
+      lastTweet: state.lastTweet,
     })),
     decision: raw.decision,
     createdAt: raw.createdAt,
@@ -215,6 +221,7 @@ function blueprintToFlow(blueprint: Blueprint): {
       action: node.action,
       inputType: node.inputType,
       cryptoMonitorConfig: node.cryptoMonitorConfig,
+      xMonitorConfig: node.xMonitorConfig,
     },
   }));
 
@@ -254,6 +261,9 @@ function flowToBlueprint(
       ...(node.data.inputType ? { inputType: node.data.inputType } : {}),
       ...(node.data.cryptoMonitorConfig
         ? { cryptoMonitorConfig: node.data.cryptoMonitorConfig }
+        : {}),
+      ...(node.data.xMonitorConfig
+        ? { xMonitorConfig: node.data.xMonitorConfig }
         : {}),
     })),
     edges: edges.map((edge) => ({
@@ -323,18 +333,27 @@ function BaseNode({
 
 function InputNode({ data }: NodeProps<Node<FlowNodeData, "inputNode">>) {
   const isCrypto = data.inputType === "crypto_monitor";
+  const isXMonitor = data.inputType === "x_monitor";
+
+  const subtitle = isCrypto
+    ? "Crypto Monitor"
+    : isXMonitor
+      ? "X Monitor"
+      : "Manual Trigger";
+
+  const icon = isCrypto ? (
+    <TrendingUp className="size-4 text-[#e8a838]" />
+  ) : isXMonitor ? (
+    <AtSign className="size-4 text-[#1d9bf0]" />
+  ) : (
+    <Zap className="size-4" />
+  );
 
   return (
     <BaseNode
       label={data.label}
-      subtitle={isCrypto ? "Crypto Monitor" : "Manual Trigger"}
-      icon={
-        isCrypto ? (
-          <TrendingUp className="size-4 text-[#e8a838]" />
-        ) : (
-          <Zap className="size-4" />
-        )
-      }
+      subtitle={subtitle}
+      icon={icon}
       hasError={data.hasError}
     >
       <Handle type="source" position={Position.Right} />
@@ -349,6 +368,36 @@ function InputNode({ data }: NodeProps<Node<FlowNodeData, "inputNode">>) {
                 ? "Drops below"
                 : "Rises above"}{" "}
               ${data.cryptoMonitorConfig.targetPrice.toLocaleString()}
+            </p>
+          )}
+        </div>
+      ) : isXMonitor && data.xMonitorConfig ? (
+        <div className="space-y-0.5">
+          <p className="text-[11px] font-medium text-[#1d9bf0]">
+            {data.xMonitorConfig.monitorType === "keyword_match"
+              ? "Keyword Match"
+              : data.xMonitorConfig.monitorType === "sentiment_analysis"
+                ? "Sentiment Analysis"
+                : "Account Monitor"}
+          </p>
+          {data.xMonitorConfig.account && (
+            <p className="text-[11px] text-[#8a918c]">
+              @{data.xMonitorConfig.account}
+            </p>
+          )}
+          {data.xMonitorConfig.keywords && data.xMonitorConfig.keywords.length > 0 && (
+            <p className="text-[11px] text-[#8a918c]">
+              Keywords: {data.xMonitorConfig.keywords.join(", ")}
+            </p>
+          )}
+          {data.xMonitorConfig.sentimentTarget && (
+            <p className="text-[11px] text-[#8a918c]">
+              Target: {data.xMonitorConfig.sentimentTarget}
+            </p>
+          )}
+          {data.xMonitorConfig.topic && (
+            <p className="text-[11px] text-[#8a918c]">
+              Topic: {data.xMonitorConfig.topic}
             </p>
           )}
         </div>
@@ -591,6 +640,88 @@ function FloatingNodeToolbar({
           />
         </div>
       )}
+      {node.type === "inputNode" && node.data.inputType === "x_monitor" && (
+        <div className="mt-1 flex flex-col gap-1.5 border border-white/10 bg-[#161a19] px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+          <div className="flex items-center gap-1.5">
+            <select
+              className="h-6 rounded border border-white/10 bg-[#1a1f1d] px-1.5 text-[11px] text-[#c8ccc9]"
+              value={node.data.xMonitorConfig?.monitorType ?? "keyword_match"}
+              onChange={(e) =>
+                onUpdate({
+                  xMonitorConfig: {
+                    ...(node.data.xMonitorConfig ?? {}),
+                    monitorType: e.target.value as XMonitorType,
+                  },
+                })
+              }
+            >
+              <option value="keyword_match">Keyword Match</option>
+              <option value="sentiment_analysis">Sentiment Analysis</option>
+              <option value="account_monitor">Account Monitor</option>
+            </select>
+            <Input
+              className="h-6 w-28 text-[11px]"
+              value={node.data.xMonitorConfig?.account ?? ""}
+              onChange={(e) =>
+                onUpdate({
+                  xMonitorConfig: {
+                    ...(node.data.xMonitorConfig ?? { monitorType: "keyword_match" as XMonitorType }),
+                    account: e.target.value,
+                  },
+                })
+              }
+              placeholder="@handle"
+            />
+          </div>
+          {node.data.xMonitorConfig?.monitorType === "keyword_match" && (
+            <Input
+              className="h-6 text-[11px]"
+              value={node.data.xMonitorConfig?.keywords?.join(", ") ?? ""}
+              onChange={(e) =>
+                onUpdate({
+                  xMonitorConfig: {
+                    ...(node.data.xMonitorConfig ?? { monitorType: "keyword_match" as XMonitorType }),
+                    keywords: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                  },
+                })
+              }
+              placeholder="Keywords (comma-separated)"
+            />
+          )}
+          {node.data.xMonitorConfig?.monitorType === "sentiment_analysis" && (
+            <select
+              className="h-6 rounded border border-white/10 bg-[#1a1f1d] px-1.5 text-[11px] text-[#c8ccc9]"
+              value={node.data.xMonitorConfig?.sentimentTarget ?? "positive"}
+              onChange={(e) =>
+                onUpdate({
+                  xMonitorConfig: {
+                    ...(node.data.xMonitorConfig ?? { monitorType: "sentiment_analysis" as XMonitorType }),
+                    sentimentTarget: e.target.value as "positive" | "negative",
+                  },
+                })
+              }
+            >
+              <option value="positive">Fires on Positive</option>
+              <option value="negative">Fires on Negative</option>
+            </select>
+          )}
+          {node.data.xMonitorConfig?.monitorType === "account_monitor" && (
+            <Input
+              className="h-6 text-[11px]"
+              value={node.data.xMonitorConfig?.topic ?? ""}
+              onChange={(e) =>
+                onUpdate({
+                  xMonitorConfig: {
+                    ...(node.data.xMonitorConfig ?? { monitorType: "account_monitor" as XMonitorType }),
+                    topic: e.target.value,
+                  },
+                })
+              }
+              placeholder="Topic filter (optional)"
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -612,6 +743,7 @@ type NodeOption = {
 
 const ALL_NODE_OPTIONS: NodeOption[] = [
   { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
+  { type: "inputNode", inputSubType: "x_monitor", label: "X Monitor", icon: <AtSign className="size-3 text-[#1d9bf0]" />, hasTarget: false, hasSource: true },
   { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#8a918c]" />, hasTarget: true, hasSource: true },
   { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#8a918c]" />, hasTarget: true, hasSource: false },
 ];
@@ -804,6 +936,16 @@ function InputNodeDropdown({
           >
             <TrendingUp className="size-3 text-[#e8a838]" />
             Crypto Monitor
+          </button>
+          <button
+            className={DROPDOWN_ITEM_CLASS}
+            onClick={() => {
+              onSelect("x_monitor");
+              setOpen(false);
+            }}
+          >
+            <AtSign className="size-3 text-[#1d9bf0]" />
+            X Monitor
           </button>
         </div>
       )}
@@ -1034,6 +1176,7 @@ function BlueprintStudioInner() {
     }
 
     const isCrypto = type === "inputNode" && inputSubType === "crypto_monitor";
+    const isXMonitor = type === "inputNode" && inputSubType === "x_monitor";
     const id = `${type}-${Date.now()}`;
     const node: Node<FlowNodeData, FlowNodeType> = {
       id,
@@ -1042,11 +1185,13 @@ function BlueprintStudioInner() {
       data: {
         label: isCrypto
           ? "BTC Price Monitor"
-          : type === "decisionNode"
-            ? "New Decision"
-            : type === "inputNode"
-              ? "New Input"
-              : "New Output",
+          : isXMonitor
+            ? "X Monitor"
+            : type === "decisionNode"
+              ? "New Decision"
+              : type === "inputNode"
+                ? "New Input"
+                : "New Output",
         inputs: type === "inputNode" ? [] : ["topic.orders"],
         outputs:
           type === "decisionNode"
@@ -1063,6 +1208,15 @@ function BlueprintStudioInner() {
                 symbol: "BTCUSDT",
                 condition: "drops_below" as CryptoConditionOperator,
                 targetPrice: 0,
+              },
+            }
+          : {}),
+        ...(isXMonitor
+          ? {
+              xMonitorConfig: {
+                monitorType: "keyword_match" as XMonitorType,
+                account: "",
+                keywords: [],
               },
             }
           : {}),
@@ -1228,6 +1382,8 @@ function BlueprintStudioInner() {
 
       const isCrypto =
         params.type === "input" && "inputType" in params && params.inputType === "crypto_monitor";
+      const isXMonitor =
+        params.type === "input" && "inputType" in params && params.inputType === "x_monitor";
 
       const node: Node<FlowNodeData, FlowNodeType> = {
         id: params.id,
@@ -1243,6 +1399,9 @@ function BlueprintStudioInner() {
             : {}),
           ...(isCrypto && "cryptoMonitorConfig" in params && params.cryptoMonitorConfig
             ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
+            : {}),
+          ...(isXMonitor && "xMonitorConfig" in params && params.xMonitorConfig
+            ? { xMonitorConfig: params.xMonitorConfig }
             : {}),
         },
       };
@@ -1274,6 +1433,9 @@ function BlueprintStudioInner() {
           ...(params.inputType !== undefined ? { inputType: params.inputType } : {}),
           ...(params.cryptoMonitorConfig !== undefined
             ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
+            : {}),
+          ...(params.xMonitorConfig !== undefined
+            ? { xMonitorConfig: params.xMonitorConfig }
             : {}),
         },
       };
@@ -1781,6 +1943,18 @@ function BlueprintStudioInner() {
                       {node.lastPrice !== undefined && (
                         <p className="text-[10px] text-[#8a918c]">
                           ${node.lastPrice.toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  ) : node.inputType === "x_monitor" ? (
+                    <div className="text-right max-w-[180px]">
+                      <p className="text-[10px] text-[#1d9bf0]">
+                        <AtSign className="mr-0.5 inline size-3" />
+                        {node.status === "fired" ? "Triggered" : "Monitoring"}
+                      </p>
+                      {node.lastTweet && (
+                        <p className="truncate text-[10px] text-[#8a918c]" title={node.lastTweet}>
+                          {node.lastTweet}
                         </p>
                       )}
                     </div>

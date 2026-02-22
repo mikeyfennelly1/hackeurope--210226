@@ -38,6 +38,41 @@ const cryptoMonitorSchema = z.object({
   }),
 });
 
+const xMonitorSchema = z.object({
+  type: z.literal("input"),
+  inputType: z.literal("x_monitor"),
+  id: z.string().describe("Unique node id, e.g. 'x-1'"),
+  label: z.string().describe("Display label, e.g. 'Elon Doge Monitor'"),
+  outputs: z
+    .array(z.string())
+    .describe("Topics this node publishes, e.g. ['topic.x']"),
+  xMonitorConfig: z.object({
+    monitorType: z
+      .enum(["keyword_match", "sentiment_analysis", "account_monitor"])
+      .describe("The type of X monitoring to perform"),
+    account: z
+      .string()
+      .optional()
+      .describe("X handle without @, e.g. 'elonmusk'"),
+    keywords: z
+      .array(z.string())
+      .optional()
+      .describe("Keywords to match in tweets, e.g. ['doge coin', 'dogecoin']"),
+    sentimentTarget: z
+      .enum(["positive", "negative"])
+      .optional()
+      .describe("Target sentiment for sentiment_analysis mode"),
+    topic: z
+      .string()
+      .optional()
+      .describe("Topic filter for account_monitor mode"),
+    pollIntervalSeconds: z
+      .number()
+      .optional()
+      .describe("Poll interval in seconds, default 60"),
+  }),
+});
+
 const decisionNodeSchema = z.object({
   type: z.literal("decision"),
   id: z.string().describe("Unique node id, e.g. 'decision-1'"),
@@ -68,6 +103,7 @@ const outputNodeSchema = z.object({
 // ─── Node union (extend by adding to this array) ────────────────
 const nodeSchema = z.union([
   cryptoMonitorSchema,
+  xMonitorSchema,
   manualTriggerSchema,
   decisionNodeSchema,
   outputNodeSchema,
@@ -107,7 +143,7 @@ const updateNodeSchema = z.object({
     .optional()
     .describe("Updated action for decision nodes"),
   inputType: z
-    .enum(["manual_trigger", "crypto_monitor"])
+    .enum(["manual_trigger", "crypto_monitor", "x_monitor"])
     .optional()
     .describe("Change the input node subtype"),
   cryptoMonitorConfig: z
@@ -118,6 +154,17 @@ const updateNodeSchema = z.object({
     })
     .optional()
     .describe("Updated crypto monitor configuration"),
+  xMonitorConfig: z
+    .object({
+      monitorType: z.enum(["keyword_match", "sentiment_analysis", "account_monitor"]),
+      account: z.string().optional(),
+      keywords: z.array(z.string()).optional(),
+      sentimentTarget: z.enum(["positive", "negative"]).optional(),
+      topic: z.string().optional(),
+      pollIntervalSeconds: z.number().optional(),
+    })
+    .optional()
+    .describe("Updated X monitor configuration"),
 });
 
 export type UpdateNodeParams = z.infer<typeof updateNodeSchema>;

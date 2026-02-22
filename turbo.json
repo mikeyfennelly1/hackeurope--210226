@@ -10,7 +10,10 @@
     "POLYMARKET_API_PASSPHRASE",
     "POLYMARKET_CHAIN_ID",
     "POLYMARKET_CLOB_HOST",
-    "NODE_ENV"
+    "NODE_ENV",
+    "GEMINI_API_KEY",
+    "GOOGLE_GENERATIVE_AI_API_KEY",
+    "TWITTER_COOKIE"
   ],
   "tasks": {
     "build": {

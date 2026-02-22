@@ -5,6 +5,7 @@ import type {
 } from "@repo/backend/blueprints/definition";
 import type { Subscription } from "nats";
 import type { BinancePriceMonitor } from "../services/binance-ws.js";
+import type { XMonitor } from "../services/x-monitor.js";
 
 export type NodeStatus = "waiting" | "fired";
 export type RedprintStatus = "running" | "completed" | "error";
@@ -18,6 +19,7 @@ export interface NodeState {
   firedAt: string | null;
   inputType?: string;
   lastPrice?: number;
+  lastTweet?: string;
 }
 
 export interface Redprint {
@@ -28,6 +30,7 @@ export interface Redprint {
   decision: Decision | null;
   subscriptions: Subscription[];
   monitors: BinancePriceMonitor[];
+  xMonitors: XMonitor[];
   readonly createdAt: string;
 }
 
@@ -52,6 +55,7 @@ export function redprintToJSON(rp: Redprint): RedprintJSON {
       firedAt: state.firedAt,
       ...(state.inputType ? { inputType: state.inputType } : {}),
       ...(state.lastPrice !== undefined ? { lastPrice: state.lastPrice } : {}),
+      ...(state.lastTweet !== undefined ? { lastTweet: state.lastTweet } : {}),
     };
   }
   return {

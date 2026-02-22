@@ -6,6 +6,7 @@ import { topologicalSort } from "./graph.js";
 import { getConnection } from "./nats.js";
 import type { NodeState, Redprint } from "./types.js";
 import { BinancePriceMonitor } from "../services/binance-ws.js";
+import { XMonitor } from "../services/x-monitor.js";
 
 const sc = StringCodec();
 
@@ -35,6 +36,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
 
   const subscriptions: Subscription[] = [];
   const monitors: BinancePriceMonitor[] = [];
+  const xMonitors: XMonitor[] = [];
 
   const redprint: Redprint = {
     id,
@@ -44,6 +46,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
     decision: null,
     subscriptions,
     monitors,
+    xMonitors,
     createdAt: new Date().toISOString(),
   };
 
@@ -102,8 +105,11 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
             // Terminal: record the decision and complete
             redprint.decision = nodeDef.action?.verb ?? null;
             redprint.status = "completed";
-            // Clean up all crypto monitors on natural completion
+            // Clean up all monitors on natural completion
             for (const monitor of redprint.monitors) {
+              monitor.close();
+            }
+            for (const monitor of redprint.xMonitors) {
               monitor.close();
             }
             console.log(
@@ -163,6 +169,53 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
     }
   }
 
+  // Auto-wire X monitor producer nodes
+  for (const nodeDef of blueprint.nodes) {
+    if (
+      nodeDef.role === "producer" &&
+      nodeDef.inputType === "x_monitor" &&
+      nodeDef.xMonitorConfig
+    ) {
+      const config = nodeDef.xMonitorConfig;
+      const monitor = new XMonitor({
+        monitorType: config.monitorType,
+        account: config.account,
+        keywords: config.keywords ? [...config.keywords] : undefined,
+        sentimentTarget: config.sentimentTarget,
+        topic: config.topic,
+        pollIntervalSeconds: config.pollIntervalSeconds,
+      });
+
+      monitor.on("tweet", ({ text }: { text: string }) => {
+        const nodeState = redprint.nodes.get(nodeDef.name);
+        if (nodeState) {
+          nodeState.lastTweet = text;
+        }
+      });
+
+      monitor.on(
+        "condition_met",
+        ({ text }: { text: string }) => {
+          console.log(
+            `[XMonitor] Condition met on tweet: "${text.slice(0, 80)}". Firing node "${nodeDef.name}"`,
+          );
+          const nodeState = redprint.nodes.get(nodeDef.name);
+          if (nodeState && nodeState.status === "waiting") {
+            nodeState.status = "fired";
+            nodeState.output = true;
+            nodeState.firedAt = new Date().toISOString();
+
+            const subject = toNatsSubject(id, nodeDef.name);
+            nc.publish(subject, sc.encode(JSON.stringify({ output: true })));
+          }
+        },
+      );
+
+      monitor.start();
+      xMonitors.push(monitor);
+    }
+  }
+
   return redprint;
 }
 
@@ -212,8 +265,11 @@ export function teardown(id: string): boolean {
     sub.unsubscribe();
   }
 
-  // Close all crypto price monitors
+  // Close all monitors
   for (const monitor of redprint.monitors) {
+    monitor.close();
+  }
+  for (const monitor of redprint.xMonitors) {
     monitor.close();
   }
 

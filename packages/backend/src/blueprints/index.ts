@@ -4,7 +4,7 @@ export { toDefinition } from "./convert";
 
 export type BlueprintNodeType = "input" | "output" | "decision";
 
-export type InputNodeType = "manual_trigger" | "crypto_monitor";
+export type InputNodeType = "manual_trigger" | "crypto_monitor" | "x_monitor";
 
 export type CryptoConditionOperator = "drops_below" | "rises_above";
 
@@ -12,6 +12,17 @@ export type CryptoMonitorConfig = {
   symbol: string;
   condition: CryptoConditionOperator;
   targetPrice: number;
+};
+
+export type XMonitorType = "keyword_match" | "sentiment_analysis" | "account_monitor";
+
+export type XMonitorConfig = {
+  monitorType: XMonitorType;
+  account?: string;
+  keywords?: string[];
+  sentimentTarget?: "positive" | "negative";
+  topic?: string;
+  pollIntervalSeconds?: number;
 };
 
 export type BlueprintNode = {
@@ -27,6 +38,7 @@ export type BlueprintNode = {
   action?: { verb: Decision; market_id: string };
   inputType?: InputNodeType;
   cryptoMonitorConfig?: CryptoMonitorConfig;
+  xMonitorConfig?: XMonitorConfig;
 };
 
 export type BlueprintEdge = {
@@ -53,7 +65,8 @@ export type ValidationErrorCode =
   | "Missing terminal output"
   | "Disconnected output"
   | "Decision missing action"
-  | "Crypto monitor missing config";
+  | "Crypto monitor missing config"
+  | "X monitor missing config";
 
 export type ValidationError = {
   code: ValidationErrorCode;
@@ -314,6 +327,37 @@ export const BlueprintUtils = {
           message: `Crypto monitor node '${node.label}' must have a symbol, condition, and positive target price`,
           nodeId: node.id,
         });
+      }
+      if (
+        node.type === "input" &&
+        node.inputType === "x_monitor"
+      ) {
+        const cfg = node.xMonitorConfig;
+        if (!cfg?.monitorType) {
+          errors.push({
+            code: "X monitor missing config",
+            message: `X monitor node '${node.label}' must have a monitor type`,
+            nodeId: node.id,
+          });
+        } else if (cfg.monitorType === "keyword_match" && (!cfg.keywords || cfg.keywords.length === 0)) {
+          errors.push({
+            code: "X monitor missing config",
+            message: `Keyword match node '${node.label}' must have at least one keyword`,
+            nodeId: node.id,
+          });
+        } else if (cfg.monitorType === "sentiment_analysis" && !cfg.sentimentTarget) {
+          errors.push({
+            code: "X monitor missing config",
+            message: `Sentiment analysis node '${node.label}' must have a sentiment target (positive or negative)`,
+            nodeId: node.id,
+          });
+        } else if (cfg.monitorType === "account_monitor" && !cfg.account) {
+          errors.push({
+            code: "X monitor missing config",
+            message: `Account monitor node '${node.label}' must have an account handle`,
+            nodeId: node.id,
+          });
+        }
       }
     }
 

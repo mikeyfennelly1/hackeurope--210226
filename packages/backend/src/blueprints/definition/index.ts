@@ -6,6 +6,8 @@ export type {
   BlueprintDefinition,
   ValidationError,
   ValidationResult,
+  XMonitorType,
+  XMonitorConfig,
 } from "./types.js";
 
 export { BlueprintUtils } from "./validate.js";
