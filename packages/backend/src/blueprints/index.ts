@@ -54,7 +54,6 @@ export type ValidationErrorCode =
   | "Missing terminal output"
   | "Disconnected output"
   | "Output missing action"
-  | "Crypto monitor missing config"
   | "Comparison missing operator"
   | "Comparison wrong input count";
 
@@ -301,23 +300,6 @@ export const BlueprintUtils = {
         errors.push({
           code: "Output missing action",
           message: `Output node '${node.label}' must have an action with verb, token_id, and amount`,
-          nodeId: node.id,
-        });
-      }
-    }
-
-    for (const node of blueprint.nodes) {
-      if (
-        node.type === "input" &&
-        node.inputType === "crypto_monitor" &&
-        (!node.cryptoMonitorConfig?.symbol ||
-          !node.cryptoMonitorConfig?.condition ||
-          !node.cryptoMonitorConfig?.targetPrice ||
-          node.cryptoMonitorConfig.targetPrice <= 0)
-      ) {
-        errors.push({
-          code: "Crypto monitor missing config",
-          message: `Crypto monitor node '${node.label}' must have a symbol, condition, and positive target price`,
           nodeId: node.id,
         });
       }

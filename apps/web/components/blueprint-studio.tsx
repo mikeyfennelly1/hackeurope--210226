@@ -185,7 +185,7 @@ function createStarterBlueprint(name: string): Blueprint {
     .addNode({
       id: "output-1",
       type: "output",
-      label: "Output",
+      label: "Place Order",
       position: { x: 760, y: 240 },
       inputs: ["topic.orders"],
       outputs: [],
@@ -402,7 +402,7 @@ function BaseNode({
 
 function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
   const { data, selected } = props;
-  if (data.inputType === "crypto_monitor" || data.inputType === "crypto_price") {
+  if (data.inputType === "crypto_price") {
     return <CryptoMonitorNode {...props} />;
   }
 
@@ -429,7 +429,7 @@ function OutputNode({ data, selected }: NodeProps<Node<FlowNodeData, "outputNode
   return (
     <BaseNode
       label={data.label}
-      subtitle="Output"
+      subtitle="Place Order"
       icon={<CheckCircle2 className="size-3.5" />}
       hasError={data.hasError}
       selected={selected}
@@ -589,7 +589,7 @@ function FloatingNodeToolbar({
 
   const nodeTypeLabel =
     node.type === "inputNode" ? "INPUT"
-    : node.type === "outputNode" ? "OUTPUT"
+    : node.type === "outputNode" ? "PLACE ORDER"
     : node.type === "decisionNode" ? "DECISION"
     : node.type === "comparisonNode" ? "COMPARISON"
     : "MARKET";
@@ -687,73 +687,7 @@ function FloatingNodeToolbar({
             </ToolbarField>
           )}
 
-          {/* Input node: crypto monitor fields */}
-          {node.type === "inputNode" && node.data.inputType === "crypto_monitor" && (
-            <>
-              <ToolbarField label="Symbol">
-                <select
-                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
-                  value={node.data.cryptoMonitorConfig?.symbol ?? "BTCUSDT"}
-                  onChange={(e) =>
-                    onUpdate({
-                      cryptoMonitorConfig: {
-                        ...(node.data.cryptoMonitorConfig ?? {
-                          condition: "drops_below" as CryptoConditionOperator,
-                          targetPrice: 0,
-                        }),
-                        symbol: e.target.value,
-                      },
-                    })
-                  }
-                >
-                  <option value="BTCUSDT">BTC / USDT</option>
-                  <option value="ETHUSDT">ETH / USDT</option>
-                  <option value="SOLUSDT">SOL / USDT</option>
-                  <option value="DOGEUSDT">DOGE / USDT</option>
-                  <option value="XRPUSDT">XRP / USDT</option>
-                </select>
-              </ToolbarField>
-              <ToolbarField label="Condition">
-                <select
-                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
-                  value={node.data.cryptoMonitorConfig?.condition ?? "drops_below"}
-                  onChange={(e) =>
-                    onUpdate({
-                      cryptoMonitorConfig: {
-                        ...(node.data.cryptoMonitorConfig ?? {
-                          symbol: "BTCUSDT",
-                          targetPrice: 0,
-                        }),
-                        condition: e.target.value as CryptoConditionOperator,
-                      },
-                    })
-                  }
-                >
-                  <option value="drops_below">Drops below</option>
-                  <option value="rises_above">Rises above</option>
-                </select>
-              </ToolbarField>
-              <ToolbarField label="Target Price">
-                <Input
-                  className="h-6 w-56 text-[11px]"
-                  type="number"
-                  value={node.data.cryptoMonitorConfig?.targetPrice ?? ""}
-                  onChange={(e) =>
-                    onUpdate({
-                      cryptoMonitorConfig: {
-                        ...(node.data.cryptoMonitorConfig ?? {
-                          symbol: "BTCUSDT",
-                          condition: "drops_below" as CryptoConditionOperator,
-                        }),
-                        targetPrice: parseFloat(e.target.value) || 0,
-                      },
-                    })
-                  }
-                  placeholder="Target $"
-                />
-              </ToolbarField>
-            </>
-          )}
+
 
           {/* Output node: inputs (consumes) + action */}
           {node.type === "outputNode" && (
@@ -983,18 +917,20 @@ type NodeOption = {
 };
 
 const INPUT_NODE_OPTIONS: NodeOption[] = [
-  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
   { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
   { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
 ];
 
-const OTHER_NODE_OPTIONS: NodeOption[] = [
+const LOGIC_NODE_OPTIONS: NodeOption[] = [
   { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
   { type: "comparisonNode", label: "Comparison", icon: <Scale className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
-  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
 ];
 
-const ALL_NODE_OPTIONS: NodeOption[] = [...INPUT_NODE_OPTIONS, ...OTHER_NODE_OPTIONS];
+const OUTPUT_NODE_OPTIONS: NodeOption[] = [
+  { type: "outputNode", label: "Place Order", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
+];
+
+const ALL_NODE_OPTIONS: NodeOption[] = [...INPUT_NODE_OPTIONS, ...LOGIC_NODE_OPTIONS, ...OUTPUT_NODE_OPTIONS];
 
 const DROPDOWN_CONTENT_CLASS =
   "border-white/10 bg-[#111314] shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
@@ -1132,19 +1068,48 @@ function CanvasContextMenu({
                 ))}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            {OTHER_NODE_OPTIONS.map((opt) => (
-              <DropdownMenuItem
-                key={`${opt.type}-${opt.inputSubType ?? ""}`}
-                className={DROPDOWN_ITEM_CLASS}
-                onClick={() => {
-                  onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
-                  onClose();
-                }}
-              >
-                {opt.icon}
-                {opt.label}
-              </DropdownMenuItem>
-            ))}
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className={DROPDOWN_SUBTRIGGER_CLASS}>
+                <GitBranch className="size-3 text-[#d4602c]" />
+                Logic
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className={DROPDOWN_CONTENT_CLASS}>
+                {LOGIC_NODE_OPTIONS.map((opt) => (
+                  <DropdownMenuItem
+                    key={`${opt.type}-${opt.inputSubType ?? ""}`}
+                    className={DROPDOWN_ITEM_CLASS}
+                    onClick={() => {
+                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
+                      onClose();
+                    }}
+                  >
+                    {opt.icon}
+                    {opt.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className={DROPDOWN_SUBTRIGGER_CLASS}>
+                <CheckCircle2 className="size-3 text-[#d4602c]" />
+                Output
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className={DROPDOWN_CONTENT_CLASS}>
+                {OUTPUT_NODE_OPTIONS.map((opt) => (
+                  <DropdownMenuItem
+                    key={`${opt.type}-${opt.inputSubType ?? ""}`}
+                    className={DROPDOWN_ITEM_CLASS}
+                    onClick={() => {
+                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
+                      onClose();
+                    }}
+                  >
+                    {opt.icon}
+                    {opt.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           </>
         ) : (
           <DropdownMenuItem
@@ -1391,18 +1356,14 @@ function BlueprintStudioInner() {
         : { x: center.x, y: center.y };
     }
 
-    const isCryptoMonitor = type === "inputNode" && inputSubType === "crypto_monitor";
     const isCryptoPrice = type === "inputNode" && inputSubType === "crypto_price";
-    const isCrypto = isCryptoMonitor || isCryptoPrice;
     const id = `${type}-${Date.now()}`;
     const node: Node<FlowNodeData, FlowNodeType> = {
       id,
       type,
       position,
       data: {
-        label: isCryptoMonitor
-          ? "BTC Price Monitor"
-          : isCryptoPrice
+        label: isCryptoPrice
             ? "BTC Price"
             : type === "decisionNode"
               ? "New Decision"
@@ -1412,7 +1373,7 @@ function BlueprintStudioInner() {
                   ? "Compare"
                   : type === "marketNode"
                     ? "Market"
-                    : "New Output",
+                    : "Place Order",
         inputs: type === "inputNode" || type === "marketNode"
           ? []
           : type === "comparisonNode"
@@ -1429,7 +1390,7 @@ function BlueprintStudioInner() {
         ...(type === "inputNode"
           ? { inputType: inputSubType ?? "manual_trigger" }
           : {}),
-        ...(isCrypto
+        ...(isCryptoPrice
           ? {
               cryptoMonitorConfig: {
                 symbol: "BTCUSDT",
@@ -1609,8 +1570,7 @@ function BlueprintStudioInner() {
 
       const inputType = "inputType" in params ? (params.inputType as string) : undefined;
       const isCrypto =
-        params.type === "input" &&
-        (inputType === "crypto_monitor" || inputType === "crypto_price");
+        params.type === "input" && inputType === "crypto_price";
 
       const node: Node<FlowNodeData, FlowNodeType> = {
         id: params.id,
@@ -2145,7 +2105,7 @@ function BlueprintStudioInner() {
                 </div>
                 {node.role === "producer" &&
                   activeRedprint.status === "running" &&
-                  (node.inputType === "crypto_monitor" ? (
+                  (node.inputType === "crypto_price" ? (
                     <div className="text-right">
                       <p className="text-[10px] text-[#e8a838]">
                         <TrendingUp className="mr-0.5 inline size-3" />

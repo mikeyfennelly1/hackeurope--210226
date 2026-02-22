@@ -21,23 +21,6 @@ const manualTriggerSchema = z.object({
     .describe("Topics this node publishes, e.g. ['topic.orders']"),
 });
 
-const cryptoMonitorSchema = z.object({
-  type: z.literal("input"),
-  inputType: z.literal("crypto_monitor"),
-  id: z.string().describe("Unique node id, e.g. 'crypto-1'"),
-  label: z.string().describe("Display label, e.g. 'BTC Price Monitor'"),
-  outputs: z
-    .array(z.string())
-    .describe("Topics this node publishes, e.g. ['topic.orders']"),
-  cryptoMonitorConfig: z.object({
-    symbol: z
-      .string()
-      .describe("Trading pair, e.g. 'BTCUSDT', 'ETHUSDT', 'SOLUSDT'"),
-    condition: z.enum(["drops_below", "rises_above"]),
-    targetPrice: z.number().describe("Target price threshold in USD"),
-  }),
-});
-
 const cryptoPriceSchema = z.object({
   type: z.literal("input"),
   inputType: z.literal("crypto_price"),
@@ -102,7 +85,6 @@ const comparisonNodeSchema = z.object({
 
 // ─── Node union (extend by adding to this array) ────────────────
 const nodeSchema = z.union([
-  cryptoMonitorSchema,
   cryptoPriceSchema,
   manualTriggerSchema,
   decisionNodeSchema,
@@ -149,7 +131,7 @@ const updateNodeSchema = z.object({
     .optional()
     .describe("Updated action for output nodes"),
   inputType: z
-    .enum(["manual_trigger", "crypto_monitor", "crypto_price"])
+    .enum(["manual_trigger", "crypto_price"])
     .optional()
     .describe("Change the input node subtype"),
   cryptoMonitorConfig: z

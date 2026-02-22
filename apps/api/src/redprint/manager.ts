@@ -250,11 +250,11 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
     }
   }
 
-  // Auto-wire crypto monitor and crypto price producer nodes
+  // Auto-wire crypto price producer nodes
   for (const nodeDef of blueprint.nodes) {
     if (
       nodeDef.role === "producer" &&
-      (nodeDef.inputType === "crypto_monitor" || nodeDef.inputType === "crypto_price") &&
+      nodeDef.inputType === "crypto_price" &&
       nodeDef.cryptoMonitorConfig
     ) {
       const config = nodeDef.cryptoMonitorConfig;

@@ -1,4 +1,4 @@
-export type InputNodeType = "manual_trigger" | "crypto_monitor" | "crypto_price";
+export type InputNodeType = "manual_trigger" | "crypto_price";
 
 export type CryptoConditionOperator = "drops_below" | "rises_above";
 

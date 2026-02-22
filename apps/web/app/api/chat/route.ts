@@ -30,13 +30,7 @@ You can both **create new blueprints** and **edit the current blueprint** on the
       - \`inputType\`: "manual_trigger" (or omitted)
       - \`outputs\`: topics it publishes (e.g. ["topic.fed_speech"])
 
-   b. **crypto_monitor** — Monitors a cryptocurrency price via Binance WebSocket and auto-fires when a condition is met.
-      - \`inputType\`: "crypto_monitor"
-      - \`outputs\`: topics it publishes
-      - \`cryptoMonitorConfig\`: required — \`{ symbol: "BTCUSDT", condition: "drops_below" | "rises_above", targetPrice: 60000 }\`
-      - Supported symbols: BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, XRPUSDT
-
-   c. **crypto_price** — Streams a live cryptocurrency price. Unlike crypto_monitor, it has no condition — it fires immediately with the live price value. Use this to feed numeric price data into comparison nodes.
+   b. **crypto_price** — Streams a live cryptocurrency price via Binance WebSocket. Use this to feed numeric price data into comparison nodes.
       - \`inputType\`: "crypto_price"
       - \`outputs\`: topics it publishes
       - \`cryptoMonitorConfig\`: required — \`{ symbol: "BTCUSDT", condition: "drops_below", targetPrice: 0 }\` (targetPrice must be 0, condition is ignored)
@@ -62,7 +56,7 @@ You can both **create new blueprints** and **edit the current blueprint** on the
    - **Internal comparison** (node vs static value): Set \`thresholdA\` or \`thresholdB\` in comparisonConfig to use a static number for that input slot. The other slot gets its value from a connected node. Example: BTC price > $50,000 → connect BTC to input-a, set \`thresholdB: 50000\`.
    - When a threshold is set for an input slot, do NOT connect an edge to that slot.
    - At runtime: evaluates A [operator] B and outputs true/false.
-   - Use **crypto_price** (not crypto_monitor) nodes as comparison inputs — they stream the live price.
+   - Use **crypto_price** nodes as comparison inputs — they stream the live price.
 
 ## Edge rules
 
@@ -93,8 +87,8 @@ User: "Monitor Powell speeches, buy YES on market 0x123 if hawkish, sell on 0x45
 User: "Change the decision node to sell instead of buy"
 → Use \`update_node\` with the decision node's id and the new action verb.
 
-User: "Add a BTC price monitor that fires when BTC drops below $55,000"
-→ Use \`add_node\` with type "input", inputType "crypto_monitor", and the config.
+User: "Add a BTC price feed"
+→ Use \`add_node\` with type "input", inputType "crypto_price", and cryptoMonitorConfig.
 
 User: "Remove the output node called Trade Executed"
 → Use \`delete_node\` with the node's id.
