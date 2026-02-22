@@ -11,6 +11,9 @@ type PulseContextValue = {
   pulseNode: (nodeId: string, correlationId?: number) => void;
   nodeValues: Record<string, number>;
   setNodeValue: (nodeId: string, value: number) => void;
+  /** Fire a node in the running Redprint backend (if any). */
+  pushRedprintNode: (nodeId: string) => void;
+  setPushRedprintNode: (fn: ((nodeId: string) => void) | null) => void;
 };
 
 const PulseContext = createContext<PulseContextValue>({
@@ -18,6 +21,8 @@ const PulseContext = createContext<PulseContextValue>({
   pulseNode: () => {},
   nodeValues: {},
   setNodeValue: () => {},
+  pushRedprintNode: () => {},
+  setPushRedprintNode: () => {},
 });
 
 export function PulseProvider({ children }: { children: React.ReactNode }) {
@@ -57,8 +62,18 @@ export function PulseProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const pushFnRef = useRef<((nodeId: string) => void) | null>(null);
+
+  const pushRedprintNode = useCallback((nodeId: string) => {
+    pushFnRef.current?.(nodeId);
+  }, []);
+
+  const setPushRedprintNode = useCallback((fn: ((nodeId: string) => void) | null) => {
+    pushFnRef.current = fn;
+  }, []);
+
   return (
-    <PulseContext.Provider value={{ pulsingNodes, pulseNode, nodeValues, setNodeValue }}>
+    <PulseContext.Provider value={{ pulsingNodes, pulseNode, nodeValues, setNodeValue, pushRedprintNode, setPushRedprintNode }}>
       {children}
     </PulseContext.Provider>
   );

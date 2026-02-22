@@ -31,6 +31,7 @@ import {
   BlueprintUtils,
   toDefinition,
   type Blueprint,
+  type BlueskyKeywordConfig,
   type ComparisonOperator,
   type CryptoConditionOperator,
   type CryptoMonitorConfig,
@@ -96,6 +97,7 @@ import { MarketNode, MARKET_OUTPUT_IDS } from "@/components/market-node";
 import { MarketPicker } from "@/components/market-picker";
 import { BacktestPanel } from "@/components/backtest-panel";
 import { SignalNode, SIGNAL_OUTPUT_IDS } from "@/components/signal-node";
+import { BlueskyNode, BLUESKY_OUTPUT_IDS } from "@/components/bluesky-node";
 
 const MARKET_OUTPUT_HANDLES_MAP: Record<string, string> = {
   price: "Price",
@@ -141,6 +143,7 @@ export type FlowNodeData = {
   rateLimiterConfig?: { maxEvents: number; windowMs: number };
   webhookConfig?: WebhookConfig;
   signalConfig?: { marketSlug: string; windowSeconds: number; refreshMs: number };
+  blueskyKeywordConfig?: BlueskyKeywordConfig;
 };
 
 type RedprintNodeState = {
@@ -285,6 +288,7 @@ function blueprintToFlow(blueprint: Blueprint): {
       rateLimiterConfig: node.rateLimiterConfig,
       webhookConfig: node.webhookConfig,
       signalConfig: node.signalConfig,
+      blueskyKeywordConfig: node.blueskyKeywordConfig,
     },
   }));
 
@@ -350,6 +354,9 @@ function flowToBlueprint(
         : {}),
       ...(node.data.signalConfig
         ? { signalConfig: node.data.signalConfig }
+        : {}),
+      ...(node.data.blueskyKeywordConfig
+        ? { blueskyKeywordConfig: node.data.blueskyKeywordConfig }
         : {}),
     })),
     edges: edges.map((edge) => ({
@@ -475,6 +482,9 @@ function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
   const { data, selected } = props;
   if (data.inputType === "crypto_price") {
     return <CryptoMonitorNode {...props} />;
+  }
+  if (data.inputType === "bluesky_keyword") {
+    return <BlueskyNode {...props} />;
   }
 
   return (
@@ -2157,6 +2167,64 @@ function FloatingNodeToolbar({
             </>
           )}
 
+          {/* BlueSky node: handle, keyword, poll interval */}
+          {node.type === "inputNode" && node.data.inputType === "bluesky_keyword" && (
+            <>
+              <ToolbarField label="Handle">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  value={node.data.blueskyKeywordConfig?.handle ?? ""}
+                  onChange={(e) =>
+                    onUpdate({
+                      blueskyKeywordConfig: {
+                        handle: e.target.value,
+                        keyword: node.data.blueskyKeywordConfig?.keyword ?? "",
+                        pollIntervalMs: node.data.blueskyKeywordConfig?.pollIntervalMs ?? 60000,
+                      },
+                    })
+                  }
+                  placeholder="alice.bsky.social"
+                />
+              </ToolbarField>
+              <ToolbarField label="Keyword">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  value={node.data.blueskyKeywordConfig?.keyword ?? ""}
+                  onChange={(e) =>
+                    onUpdate({
+                      blueskyKeywordConfig: {
+                        handle: node.data.blueskyKeywordConfig?.handle ?? "",
+                        keyword: e.target.value,
+                        pollIntervalMs: node.data.blueskyKeywordConfig?.pollIntervalMs ?? 60000,
+                      },
+                    })
+                  }
+                  placeholder="bitcoin"
+                />
+              </ToolbarField>
+              <ToolbarField label="Poll Interval">
+                <select
+                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                  value={node.data.blueskyKeywordConfig?.pollIntervalMs ?? 60000}
+                  onChange={(e) =>
+                    onUpdate({
+                      blueskyKeywordConfig: {
+                        handle: node.data.blueskyKeywordConfig?.handle ?? "",
+                        keyword: node.data.blueskyKeywordConfig?.keyword ?? "",
+                        pollIntervalMs: parseInt(e.target.value, 10),
+                      },
+                    })
+                  }
+                >
+                  <option value={1000}>1 second</option>
+                  <option value={30000}>30 seconds</option>
+                  <option value={60000}>1 minute</option>
+                  <option value={300000}>5 minutes</option>
+                </select>
+              </ToolbarField>
+            </>
+          )}
+
           {/* Signal node: market slug, window, refresh */}
           {node.type === "signalNode" && (
             <>
@@ -2242,6 +2310,7 @@ const INPUT_NODE_OPTIONS: NodeOption[] = [
   { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
   { type: "webhookNode", webhookMode: "incoming", label: "Webhook In", icon: <Globe className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
   { type: "signalNode", label: "Signal", icon: <Activity className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
+  { type: "inputNode", inputSubType: "bluesky_keyword", label: "BlueSky", icon: <MessageCircle className="size-3 text-[#0085ff]" />, hasTarget: false, hasSource: true },
 ];
 
 const LOGIC_NODE_OPTIONS: NodeOption[] = [
@@ -2489,6 +2558,7 @@ function BlueprintStudioInner() {
   const [renamingBlueprintId, setRenamingBlueprintId] = useState<string | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const { screenToFlowPosition, fitView } = useReactFlow();
+  const { setPushRedprintNode } = usePulse();
 
   const skipNextPaneClickRef = useRef(false);
   const isDraggingNodeRef = useRef(false);
@@ -2677,6 +2747,18 @@ function BlueprintStudioInner() {
     }
   };
 
+  // Register push callback so nodes (e.g. BlueskyNode) can auto-fire in the running Redprint
+  useEffect(() => {
+    if (activeRedprint && activeRedprint.status === "running") {
+      setPushRedprintNode((nodeId: string) => {
+        pushEvent(nodeId);
+      });
+    } else {
+      setPushRedprintNode(null);
+    }
+    return () => setPushRedprintNode(null);
+  }, [activeRedprint?.id, activeRedprint?.status, setPushRedprintNode]);
+
   const teardownRedprint = async () => {
     if (!activeRedprint) return;
     try {
@@ -2736,6 +2818,7 @@ function BlueprintStudioInner() {
     }
 
     const isCryptoPrice = type === "inputNode" && inputSubType === "crypto_price";
+    const isBlueskyKeyword = type === "inputNode" && inputSubType === "bluesky_keyword";
     const isWebhookIncoming = type === "webhookNode" && webhookMode === "incoming";
     const isWebhookOutgoing = type === "webhookNode" && webhookMode === "outgoing";
     const id = `${type}-${Date.now()}`;
@@ -2746,10 +2829,12 @@ function BlueprintStudioInner() {
       data: {
         label: isCryptoPrice
             ? "BTC Price"
-            : type === "decisionNode"
-              ? "New Decision"
-              : type === "inputNode"
-                ? "New Input"
+            : isBlueskyKeyword
+              ? "BlueSky Monitor"
+              : type === "decisionNode"
+                ? "New Decision"
+                : type === "inputNode"
+                  ? "New Input"
                 : type === "comparisonNode"
                   ? "Compare"
                   : type === "logicGateNode"
@@ -2781,6 +2866,8 @@ function BlueprintStudioInner() {
               ? [...MARKET_OUTPUT_IDS]
               : type === "signalNode"
                 ? [...SIGNAL_OUTPUT_IDS]
+                : isBlueskyKeyword
+                  ? [...BLUESKY_OUTPUT_IDS]
               : type === "rateLimiterNode"
                 ? ["pass", "blocked"]
                 : type === "outputNode" || type === "comparisonNode" || type === "logicGateNode" || isWebhookOutgoing
@@ -2797,6 +2884,15 @@ function BlueprintStudioInner() {
                 symbol: "BTCUSDT",
                 condition: "drops_below" as CryptoConditionOperator,
                 targetPrice: 0,
+              },
+            }
+          : {}),
+        ...(isBlueskyKeyword
+          ? {
+              blueskyKeywordConfig: {
+                handle: "",
+                keyword: "",
+                pollIntervalMs: 60000,
               },
             }
           : {}),

@@ -1,4 +1,4 @@
-export type InputNodeType = "manual_trigger" | "crypto_price" | "market";
+export type InputNodeType = "manual_trigger" | "crypto_price" | "market" | "bluesky_keyword";
 
 export type MarketOutputType = "price" | "volume" | "liquidity" | "spread" | "lastTrade";
 
@@ -8,6 +8,12 @@ export type CryptoMonitorConfig = {
   symbol: string;
   condition: CryptoConditionOperator;
   targetPrice: number;
+};
+
+export type BlueskyKeywordConfig = {
+  handle: string;
+  keyword: string;
+  pollIntervalMs: number;
 };
 
 export type NodeRole = "producer" | "consumer" | "hybrid" | "decision";
@@ -44,6 +50,7 @@ export interface NodeDefinition {
   readonly action?: NodeAction;
   readonly inputType?: InputNodeType;
   readonly cryptoMonitorConfig?: CryptoMonitorConfig;
+  readonly blueskyKeywordConfig?: BlueskyKeywordConfig;
   readonly comparisonConfig?: {
     readonly operator: ComparisonOperator;
     readonly thresholdA?: number;

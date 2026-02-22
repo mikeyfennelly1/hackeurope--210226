@@ -1,5 +1,5 @@
-import type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
-export type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
+import type { BlueskyKeywordConfig, ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
+export type { BlueskyKeywordConfig, ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
 export { toDefinition } from "./convert";
 
 export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison" | "logic_gate" | "rate_limiter" | "webhook" | "signal";
@@ -35,6 +35,7 @@ export type BlueprintNode = {
   rateLimiterConfig?: { maxEvents: number; windowMs: number };
   webhookConfig?: WebhookConfig;
   signalConfig?: { marketSlug: string; windowSeconds: number; refreshMs: number };
+  blueskyKeywordConfig?: BlueskyKeywordConfig;
 };
 
 export type BlueprintEdge = {

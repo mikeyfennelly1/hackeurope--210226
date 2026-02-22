@@ -42,6 +42,15 @@ b. **crypto_price** — Streams a live cryptocurrency price via Binance WebSocke
    - \`cryptoMonitorConfig\`: required — \`{ symbol: "BTCUSDT", condition: "drops_below", targetPrice: 0 }\` (targetPrice must be 0, condition is ignored)
    - Supported symbols: BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, XRPUSDT
 
+c. **bluesky_keyword** — Polls a BlueSky user's posts for a keyword match. Fires when a new post containing the keyword is found.
+   - \`inputType\`: "bluesky_keyword"
+   - \`outputs\`: topics it publishes
+   - \`blueskyKeywordConfig\`: required — \`{ handle: "alice.bsky.social", keyword: "bitcoin", pollIntervalMs: 60000 }\`
+   - \`handle\`: BlueSky handle (e.g. "alice.bsky.social")
+   - \`keyword\`: case-insensitive keyword to search for in posts
+   - \`pollIntervalMs\`: poll interval in milliseconds (30000=30s, 60000=1m, 300000=5m)
+   - Output handle: "matched" — fires true when a matching post is found
+
 No \`inputs\` field — input nodes don't consume anything.
 
 ### 2. decision — Conditional routing node
@@ -166,6 +175,9 @@ User: "Send a webhook to https://example.com/hook when the pipeline fires"
 
 User: "Compare BTC and ETH prices"
 → Two crypto_price nodes, a comparison node, connect BTC to input-a and ETH to input-b.
+
+User: "Monitor @vitalik.eth on BlueSky for posts about ethereum and trigger a buy"
+→ Use \`add_node\` with type "input", inputType "bluesky_keyword", and blueskyKeywordConfig { handle: "vitalik.eth", keyword: "ethereum", pollIntervalMs: 60000 }.
 
 Keep blueprint names concise and descriptive. Use clear, human-readable labels for nodes.
 
