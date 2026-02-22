@@ -1,0 +1,84 @@
+{
+  "name": "Trump and Crypto",
+  "nodes": [
+    {
+      "name": "marketNode-1771733741336",
+      "label": "Market",
+      "role": "producer",
+      "marketConfig": {
+        "slug": "who-will-trump-nominate-as-fed-chair",
+        "outcome": "yes"
+      }
+    },
+    {
+      "name": "comparisonNode-1771733797164",
+      "label": "Compare",
+      "role": "hybrid",
+      "subscribesTo": [
+        "marketNode-1771733741336"
+      ],
+      "comparisonConfig": {
+        "operator": ">",
+        "thresholdB": 0.5
+      }
+    },
+    {
+      "name": "inputNode-1771733818889",
+      "label": "BTC Price",
+      "role": "producer",
+      "inputType": "crypto_price",
+      "cryptoMonitorConfig": {
+        "symbol": "BTCUSDT",
+        "condition": "drops_below",
+        "targetPrice": 0
+      }
+    },
+    {
+      "name": "comparisonNode-1771733825747",
+      "label": "Compare",
+      "role": "hybrid",
+      "subscribesTo": [
+        "inputNode-1771733818889"
+      ],
+      "comparisonConfig": {
+        "operator": ">",
+        "thresholdB": 50000
+      }
+    },
+    {
+      "name": "decisionNode-1771733845022",
+      "label": "Both correct",
+      "role": "decision",
+      "subscribesTo": [
+        "comparisonNode-1771733797164",
+        "comparisonNode-1771733825747",
+        "comparisonNode-1771733940455"
+      ]
+    },
+    {
+      "name": "outputNode-1771733861956",
+      "label": "Place Order",
+      "role": "consumer",
+      "subscribesTo": [
+        "decisionNode-1771733845022"
+      ],
+      "action": {
+        "verb": "buy",
+        "token_id": "4394372887385518214471608448209527405727552777602031099972143344338178308080",
+        "amount": 1000
+      }
+    },
+    {
+      "name": "comparisonNode-1771733940455",
+      "label": "Compare",
+      "role": "hybrid",
+      "subscribesTo": [
+        "marketNode-1771733741336"
+      ],
+      "comparisonConfig": {
+        "operator": ">",
+        "thresholdB": 45000
+      }
+    }
+  ]
+}
