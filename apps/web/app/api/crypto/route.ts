@@ -15,6 +15,31 @@ export async function GET(req: NextRequest) {
   const sym = symbol.toUpperCase();
 
   try {
+    // Aggregated trades for the last N seconds (for live view seeding)
+    if (type === "trades") {
+      const seconds = parseInt(searchParams.get("seconds") ?? "60", 10);
+      const startTime = Date.now() - seconds * 1000;
+      const res = await fetch(
+        `https://api.binance.com/api/v3/aggTrades?symbol=${encodeURIComponent(sym)}&startTime=${startTime}&limit=1000`,
+        { cache: "no-store" },
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Binance HTTP ${res.status}: ${text}`);
+      }
+      const data = (await res.json()) as Array<{ T: number; p: string }>;
+      // Bucket trades into 1-second intervals to keep point count manageable
+      const buckets = new Map<number, number>();
+      for (const trade of data) {
+        const sec = Math.floor(trade.T / 1000);
+        buckets.set(sec, parseFloat(trade.p));
+      }
+      const points = Array.from(buckets.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([time, value]) => ({ time, value }));
+      return NextResponse.json({ points });
+    }
+
     if (type === "klines") {
       const interval = searchParams.get("interval") ?? "1h";
       const limit = searchParams.get("limit") ?? "24";
