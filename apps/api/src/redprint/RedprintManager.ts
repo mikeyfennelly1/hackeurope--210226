@@ -52,6 +52,7 @@ export class RedprintManager {
    */
   dispatch(blueprint: BlueprintDefinition): Redprint {
     const id = randomUUID();
+    logger.info(`>>> DISPATCH CALLED - blueprint="${blueprint.name}" nodes=${blueprint.nodes.length}`);
     logger.trace(`dispatch() — blueprint="${blueprint.name}" nodes=${blueprint.nodes.length}`);
     logger.info(`Dispatching new redprint from blueprint "${blueprint.name}" [id=${id}]`);
 
@@ -71,7 +72,7 @@ export class RedprintManager {
     }
 
     const subscriptions: Subscription[] = [];
-    const monitors: PolymarketProducer[] = [];
+    const monitors: (PolymarketProducer | PolymarketCryptoMonitor)[] = [];
 
     const redprint: Redprint = {
       id,
@@ -171,6 +172,65 @@ export class RedprintManager {
         monitors.push(producer);
         logger.trace(`[${id.slice(0, 8)}] Market producer "${nodeDef.name}.${outputId}" started`);
       }
+    }
+
+    // Auto-wire crypto monitor producer nodes
+    // Debug: log all nodes to see what's in the blueprint
+    for (const n of blueprint.nodes) {
+      if (n.inputType === "crypto_price") {
+        logger.info(`[${id.slice(0, 8)}] Found crypto node "${n.name}": role=${n.role} inputType=${n.inputType} cryptoMonitorConfig=${JSON.stringify(n.cryptoMonitorConfig)}`);
+      }
+    }
+    const cryptoProducers = blueprint.nodes.filter(
+      (n) => n.role === "producer" && n.inputType === "crypto_price" && n.cryptoMonitorConfig,
+    );
+    logger.debug(`[${id.slice(0, 8)}] Wiring ${cryptoProducers.length} crypto producer(s)`);
+
+    for (const nodeDef of cryptoProducers) {
+      const config = nodeDef.cryptoMonitorConfig!;
+      logger.trace(
+        `[${id.slice(0, 8)}] Starting CryptoMonitor for "${nodeDef.name}": symbol=${config.symbol} condition=${config.condition} targetPrice=${config.targetPrice}`,
+      );
+
+      const monitor = new PolymarketCryptoMonitor({
+        symbol: config.symbol,
+        operator: config.condition,
+        targetPrice: config.targetPrice,
+      });
+
+      monitor.on("price", ({ price }: { price: number }) => {
+        const nodeState = redprint.nodes.get(nodeDef.name);
+        if (nodeState) {
+          nodeState.lastPrice = price;
+        }
+        // Publish price to NATS on every tick
+        const subject = toNatsSubject(id, `${nodeDef.name}.price`);
+        logger.debug(`[${id.slice(0, 8)}] Publishing crypto price=${price} to "${subject}"`);
+        getConnection().publish(subject, sc.encode(JSON.stringify({ output: true, value: price })));
+      });
+
+      monitor.on(
+        "condition_met",
+        ({ price }: { symbol: string; price: number }) => {
+          logger.info(
+            `[${id.slice(0, 8)}] CryptoMonitor "${nodeDef.name}": ${config.symbol} condition met at $${price} — firing node`,
+          );
+          const nodeState = redprint.nodes.get(nodeDef.name);
+          if (nodeState && nodeState.status === "waiting") {
+            nodeState.status = "fired";
+            nodeState.output = true;
+            nodeState.firedAt = new Date().toISOString();
+
+            const subject = toNatsSubject(id, nodeDef.name);
+            logger.debug(`[${id.slice(0, 8)}] Publishing condition_met event to subject "${subject}"`);
+            getConnection().publish(subject, sc.encode(JSON.stringify({ output: true })));
+          }
+        },
+      );
+
+      monitor.start();
+      monitors.push(monitor);
+      logger.trace(`[${id.slice(0, 8)}] CryptoMonitor "${nodeDef.name}" started`);
     }
 
     logger.trace(`[${id.slice(0, 8)}] dispatch() complete — returning redprint`);

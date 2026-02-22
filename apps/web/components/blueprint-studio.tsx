@@ -3087,8 +3087,17 @@ function BlueprintStudioInner() {
           ...("inputType" in params && params.inputType
             ? { inputType: params.inputType }
             : {}),
-          ...(isCrypto && "cryptoMonitorConfig" in params && params.cryptoMonitorConfig
-            ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
+          ...(isCrypto
+            ? {
+                cryptoMonitorConfig:
+                  "cryptoMonitorConfig" in params && params.cryptoMonitorConfig
+                    ? params.cryptoMonitorConfig
+                    : {
+                        symbol: "BTCUSDT",
+                        condition: "drops_below" as CryptoConditionOperator,
+                        targetPrice: 0,
+                      },
+              }
             : {}),
           ...("comparisonConfig" in params &&
             params.comparisonConfig &&
