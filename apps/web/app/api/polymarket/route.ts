@@ -4,6 +4,49 @@ export async function GET(request: NextRequest) {
   const slug = request.nextUrl.searchParams.get("slug");
   const tokenId = request.nextUrl.searchParams.get("tokenId");
   const top = request.nextUrl.searchParams.get("top");
+  const query = request.nextUrl.searchParams.get("query");
+
+  // Search events endpoint (returns events matching a text query)
+  if (query) {
+    const limit = parseInt(request.nextUrl.searchParams.get("limit") ?? "10", 10);
+    const res = await fetch(
+      `https://gamma-api.polymarket.com/events?title=${encodeURIComponent(query)}&limit=${limit}&order=volume24hr&ascending=false&closed=false`,
+    );
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: `GAMMA API returned ${res.status}` },
+        { status: res.status },
+      );
+    }
+    const events = await res.json();
+    const simplified = events
+      .filter((e: { markets?: unknown[] }) => e.markets?.length)
+      .map((e: { title: string; slug: string; image: string; markets: Array<{ question: string; clobTokenIds: string | string[]; outcomes: string | string[]; outcomePrices: string | string[] }> }) => {
+        const m = e.markets[0]!;
+        const tokenIds = typeof m.clobTokenIds === "string"
+          ? (JSON.parse(m.clobTokenIds) as string[])
+          : m.clobTokenIds;
+        const outcomes = typeof m.outcomes === "string"
+          ? (JSON.parse(m.outcomes) as string[])
+          : m.outcomes;
+        const prices = typeof m.outcomePrices === "string"
+          ? (JSON.parse(m.outcomePrices) as string[])
+          : m.outcomePrices;
+        const yesIdx = outcomes.findIndex((o) => o.toLowerCase() === "yes");
+        const noIdx = yesIdx === 0 ? 1 : 0;
+        return {
+          title: e.title,
+          slug: e.slug,
+          question: m.question,
+          yesTokenId: tokenIds[yesIdx >= 0 ? yesIdx : 0],
+          noTokenId: tokenIds[noIdx],
+          yesPrice: prices?.[yesIdx >= 0 ? yesIdx : 0],
+          noPrice: prices?.[noIdx],
+          numMarkets: e.markets.length,
+        };
+      });
+    return NextResponse.json(simplified);
+  }
 
   // Top events endpoint (returns events with image, slug, title)
   if (top) {

@@ -2899,9 +2899,11 @@ function BlueprintStudioInner() {
                 ? "logicGateNode"
                 : t === "market"
                   ? "marketNode"
-                  : t === "webhook"
-                    ? "webhookNode"
-                  : "outputNode";
+                  : t === "rate_limiter"
+                    ? "rateLimiterNode"
+                    : t === "webhook"
+                      ? "webhookNode"
+                      : "outputNode";
 
       const inputType = "inputType" in params ? (params.inputType as string) : undefined;
       const isCrypto =
@@ -2933,6 +2935,21 @@ function BlueprintStudioInner() {
             : {}),
           ...("webhookConfig" in params && params.webhookConfig
             ? { webhookConfig: params.webhookConfig as WebhookConfig }
+            : {}),
+          ...("rateLimiterConfig" in params && params.rateLimiterConfig
+            ? { rateLimiterConfig: params.rateLimiterConfig as { maxEvents: number; windowMs: number } }
+            : {}),
+          ...("marketSlug" in params && params.marketSlug != null
+            ? { marketSlug: params.marketSlug as string }
+            : {}),
+          ...("marketOutcome" in params && params.marketOutcome
+            ? { marketOutcome: params.marketOutcome as MarketOutcome }
+            : {}),
+          ...("marketIndex" in params && params.marketIndex != null
+            ? { marketIndex: params.marketIndex as number }
+            : {}),
+          ...("amountType" in params && params.amountType
+            ? { amountType: params.amountType as "dollars" | "shares" }
             : {}),
         },
       };
@@ -2970,6 +2987,24 @@ function BlueprintStudioInner() {
             : {}),
           ...("webhookConfig" in params && params.webhookConfig !== undefined
             ? { webhookConfig: params.webhookConfig }
+            : {}),
+          ...(params.comparisonConfig !== undefined
+            ? { comparisonConfig: params.comparisonConfig }
+            : {}),
+          ...(params.rateLimiterConfig !== undefined
+            ? { rateLimiterConfig: params.rateLimiterConfig }
+            : {}),
+          ...(params.marketSlug !== undefined
+            ? { marketSlug: params.marketSlug }
+            : {}),
+          ...(params.marketOutcome !== undefined
+            ? { marketOutcome: params.marketOutcome }
+            : {}),
+          ...(params.marketIndex !== undefined
+            ? { marketIndex: params.marketIndex }
+            : {}),
+          ...(params.amountType !== undefined
+            ? { amountType: params.amountType }
             : {}),
         },
       };
