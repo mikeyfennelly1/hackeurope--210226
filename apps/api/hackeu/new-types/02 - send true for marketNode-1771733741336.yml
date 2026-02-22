@@ -1,0 +1,37 @@
+info:
+  name: 02 - send true for marketNode-1771733741336
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/redprints/{{redprintId}}/nodes/marketNode-1771733741336"
+  body:
+    type: json
+    data: |-
+      {
+        "output": true
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        const baseUrl = bru.getEnvVar("baseUrl");
+
+        const { data: redprints } = await axios.get(`${baseUrl}/api/redprints`);
+
+        const running = redprints.find(r => r.status === "running");
+
+        if (!running) {
+          throw new Error("No running redprint found — dispatch one first");
+        }
+
+        bru.setVar("redprintId", running.id);
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

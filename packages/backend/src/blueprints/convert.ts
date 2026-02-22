@@ -85,6 +85,8 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
         : {}),
       ...(node.action ? { action: node.action } : {}),
       ...(node.inputType ? { inputType: node.inputType } : {}),
+      // Set inputType for market nodes
+      ...(node.type === "market" ? { inputType: "market" as const } : {}),
       ...(node.cryptoMonitorConfig
         ? { cryptoMonitorConfig: node.cryptoMonitorConfig }
         : {}),
@@ -92,7 +94,14 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
         ? { comparisonConfig: node.comparisonConfig }
         : {}),
       ...(node.type === "market" && node.marketSlug
-        ? { marketConfig: { slug: node.marketSlug, outcome: node.marketOutcome ?? "yes" } }
+        ? {
+            marketConfig: {
+              slug: node.marketSlug,
+              outcome: node.marketOutcome ?? "yes",
+              tokenId: node.marketTokenId,
+            },
+            outputs: node.outputs ?? ["price", "volume", "liquidity", "spread", "lastTrade"],
+          }
         : {}),
       ...(node.logicGateConfig
         ? { logicGateConfig: node.logicGateConfig }

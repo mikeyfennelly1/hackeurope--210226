@@ -1,4 +1,6 @@
-export type InputNodeType = "manual_trigger" | "crypto_price";
+export type InputNodeType = "manual_trigger" | "crypto_price" | "market";
+
+export type MarketOutputType = "price" | "volume" | "liquidity" | "spread" | "lastTrade";
 
 export type CryptoConditionOperator = "drops_below" | "rises_above";
 
@@ -57,6 +59,7 @@ export interface NodeDefinition {
   readonly marketConfig?: {
     readonly slug: string;
     readonly outcome: "yes" | "no";
+    readonly tokenId?: string;
   };
   readonly webhookConfig?: WebhookConfig;
   readonly signalConfig?: {
@@ -64,6 +67,7 @@ export interface NodeDefinition {
     readonly windowSeconds: number;
     readonly refreshMs: number;
   };
+  readonly outputs?: readonly MarketOutputType[];
 }
 
 export interface BlueprintDefinition {

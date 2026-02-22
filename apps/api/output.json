@@ -1,0 +1,242 @@
+[
+    {
+        "id": "bp-snchqotg",
+        "version": 1,
+        "name": "Trump and Crypto",
+        "nodes": [
+            {
+                "id": "marketNode-1771733741336",
+                "type": "market",
+                "label": "Market",
+                "position": {
+                    "x": -660,
+                    "y": -814
+                },
+                "inputs": [],
+                "outputs": [
+                    "price",
+                    "volume",
+                    "liquidity",
+                    "spread",
+                    "lastTrade"
+                ],
+                "marketSlug": "who-will-trump-nominate-as-fed-chair",
+                "marketOutcome": "yes",
+                "marketIndex": 0
+            },
+            {
+                "id": "comparisonNode-1771733797164",
+                "type": "comparison",
+                "label": "Compare",
+                "position": {
+                    "x": -154,
+                    "y": -660
+                },
+                "inputs": [
+                    "input-a",
+                    "input-b"
+                ],
+                "outputs": [],
+                "comparisonConfig": {
+                    "operator": ">",
+                    "thresholdB": 0.5
+                }
+            },
+            {
+                "id": "inputNode-1771733818889",
+                "type": "input",
+                "label": "BTC Price",
+                "position": {
+                    "x": -660,
+                    "y": -330
+                },
+                "inputs": [],
+                "outputs": [
+                    "topic.orders"
+                ],
+                "inputType": "crypto_price",
+                "cryptoMonitorConfig": {
+                    "symbol": "BTCUSDT",
+                    "condition": "drops_below",
+                    "targetPrice": 0
+                }
+            },
+            {
+                "id": "comparisonNode-1771733825747",
+                "type": "comparison",
+                "label": "Compare",
+                "position": {
+                    "x": -154,
+                    "y": -242
+                },
+                "inputs": [
+                    "input-a",
+                    "input-b"
+                ],
+                "outputs": [],
+                "comparisonConfig": {
+                    "operator": ">",
+                    "thresholdB": 50000
+                }
+            },
+            {
+                "id": "decisionNode-1771733845022",
+                "type": "decision",
+                "label": "Both correct",
+                "position": {
+                    "x": 242,
+                    "y": -528
+                },
+                "inputs": [
+                    "topic.orders"
+                ],
+                "outputs": [
+                    "place-order"
+                ]
+            },
+            {
+                "id": "outputNode-1771733861956",
+                "type": "output",
+                "label": "Place Order",
+                "position": {
+                    "x": 616,
+                    "y": -506
+                },
+                "inputs": [
+                    "topic.orders"
+                ],
+                "outputs": [],
+                "action": {
+                    "verb": "buy",
+                    "token_id": "4394372887385518214471608448209527405727552777602031099972143344338178308080",
+                    "amount": 1000
+                },
+                "marketSlug": "2026-fifa-world-cup-winner-595",
+                "marketOutcome": "yes"
+            },
+            {
+                "id": "comparisonNode-1771733940455",
+                "type": "comparison",
+                "label": "Compare",
+                "position": {
+                    "x": -154,
+                    "y": -484
+                },
+                "inputs": [
+                    "input-a",
+                    "input-b"
+                ],
+                "outputs": [],
+                "comparisonConfig": {
+                    "operator": ">",
+                    "thresholdB": 45000
+                }
+            }
+        ],
+        "edges": [
+            {
+                "id": "edge-1771733845022",
+                "source": "comparisonNode-1771733797164",
+                "target": "decisionNode-1771733845022"
+            },
+            {
+                "id": "edge-1771733857372",
+                "source": "comparisonNode-1771733825747",
+                "target": "decisionNode-1771733845022"
+            },
+            {
+                "id": "edge-1771733861956",
+                "source": "decisionNode-1771733845022",
+                "target": "outputNode-1771733861956",
+                "sourceHandle": "place-order"
+            },
+            {
+                "id": "edge-1771733950638",
+                "source": "comparisonNode-1771733940455",
+                "target": "decisionNode-1771733845022"
+            },
+            {
+                "id": "edge-1771734397409",
+                "source": "inputNode-1771733818889",
+                "target": "comparisonNode-1771733825747",
+                "targetHandle": "input-a"
+            },
+            {
+                "id": "edge-1771734433333",
+                "source": "marketNode-1771733741336",
+                "target": "comparisonNode-1771733940455",
+                "sourceHandle": "volume",
+                "targetHandle": "input-a"
+            },
+            {
+                "id": "edge-1771734437008",
+                "source": "marketNode-1771733741336",
+                "target": "comparisonNode-1771733797164",
+                "sourceHandle": "price",
+                "targetHandle": "input-a"
+            }
+        ]
+    },
+    {
+        "id": "bp-j5qu6dp1",
+        "version": 1,
+        "name": "Blueprint 2",
+        "nodes": [
+            {
+                "id": "input-1",
+                "type": "input",
+                "label": "Input",
+                "position": {
+                    "x": 80,
+                    "y": 240
+                },
+                "inputs": [],
+                "outputs": [
+                    "topic.orders"
+                ]
+            },
+            {
+                "id": "decision-1",
+                "type": "decision",
+                "label": "Decision",
+                "position": {
+                    "x": 400,
+                    "y": 220
+                },
+                "inputs": [
+                    "topic.orders"
+                ],
+                "outputs": [
+                    "approved",
+                    "rejected"
+                ]
+            },
+            {
+                "id": "output-1",
+                "type": "output",
+                "label": "Place Order",
+                "position": {
+                    "x": 760,
+                    "y": 240
+                },
+                "inputs": [
+                    "topic.orders"
+                ],
+                "outputs": []
+            }
+        ],
+        "edges": [
+            {
+                "id": "edge-1",
+                "source": "input-1",
+                "target": "decision-1"
+            },
+            {
+                "id": "edge-2",
+                "source": "decision-1",
+                "target": "output-1",
+                "sourceHandle": "approved"
+            }
+        ]
+    }
+]

@@ -4,7 +4,10 @@ import type {
   NodeRole,
 } from "@repo/backend/blueprints/definition";
 import type { Subscription } from "nats";
-import type { CryptoPriceMonitor } from "../services/binance-ws.js";
+import type { PolymarketProducer } from "../services/polymarket-ws.js";
+import type { PolymarketCryptoMonitor } from "../services/polymarket-crypto-ws.js";
+
+type Monitor = PolymarketProducer | PolymarketCryptoMonitor;
 
 export type NodeStatus = "waiting" | "fired";
 export type RedprintStatus = "running" | "completed" | "error";
@@ -34,7 +37,7 @@ export interface Redprint {
   nodes: Map<string, NodeState>;
   decision: Decision | null;
   subscriptions: Subscription[];
-  monitors: CryptoPriceMonitor[];
+  monitors: Monitor[];
   readonly createdAt: string;
 }
 

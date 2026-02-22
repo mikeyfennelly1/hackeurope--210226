@@ -4,6 +4,14 @@ export function toNatsSubject(blueprintName: string, nodeName: string): string {
   return `${blueprintName}.${nodeName}`;
 }
 
+export function toNatsSubjectWithHandle(
+  blueprintId: string,
+  nodeName: string,
+  handle: string,
+): string {
+  return `${blueprintId}.${nodeName}.${handle}`;
+}
+
 export function resolveSubjects(
   blueprint: BlueprintDefinition,
 ): ReadonlyMap<string, string> {

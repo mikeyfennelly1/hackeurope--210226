@@ -1,0 +1,253 @@
+= Creating a New Node
+:toc: left
+:toclevels: 3
+
+A *node* is a unit of logic inside a blueprint. When a blueprint is dispatched
+it becomes a live *redprint*, and each node in the graph transitions from
+`"waiting"` to `"fired"` as events propagate through it.
+
+This guide covers adding a new node to a blueprint and wiring up the
+corresponding Next.js API route that drives data into it.
+
+---
+
+== Concepts
+
+=== Node roles
+
+[cols="1,4"]
+|===
+| Role | Purpose
+
+| `producer`
+| Source of truth. Has no upstream dependencies. Fires when an external
+  condition is met (e.g. a price threshold, a manual trigger, a webhook).
+
+| `consumer`
+| Terminal output node. Fires when all its upstream nodes have fired with
+  the required values. Executes an action (e.g. places a Polymarket order).
+
+| `hybrid`
+| Acts as both: consumes upstream events and produces downstream ones.
+
+| `decision`
+| Terminal node that records a `"buy"` or `"sell"` verdict and marks the
+  redprint `"completed"`.
+|===
+
+=== How events flow
+
+A producer fires → NATS publishes its output → downstream nodes receive the
+message → once all their dependencies have fired, they fire in turn → the
+chain continues until a `decision` or `consumer` node is reached.
+
+The entry point for an external system to fire a producer is:
+
+[source]
+----
+POST /api/redprints/:redprintId/nodes/:nodeName
+Body: { "output": true | false }
+----
+
+Internally this calls `redprint.writeToKey(nodeName, output)` using the
+redprint ID to locate the instance, which writes the value into the
+`DecisionBuffer` and triggers the downstream evaluation chain.
+
+---
+
+== Step 1 — Add the node to a blueprint
+
+Edit (or create) a blueprint JSON under `apps/api/blueprints/`.
+
+.Example: adding a `volume_spike` producer node
+[source,json]
+----
+{
+  "name": "my_blueprint",
+  "nodes": [
+    {
+      "name": "volume_spike",       // <1>
+      "role": "producer",           // <2>
+      "inputType": "manual_trigger" // <3>
+    },
+    {
+      "name": "decision",
+      "role": "decision",
+      "subscribesTo": [
+        { "node": "volume_spike", "requiredValue": true } // <4>
+      ],
+      "action": {
+        "verb": "buy",
+        "token_id": "0xabc...",
+        "amount": 10
+      }
+    }
+  ]
+}
+----
+<1> `name` — unique within this blueprint; becomes the NATS subject segment
+    and the `:nodeName` path parameter.
+<2> `role` — `"producer"` for a node with no upstream dependencies.
+<3> `inputType` — `"manual_trigger"` means the node waits for an external HTTP
+    push. Use `"crypto_monitor"` (plus `cryptoMonitorConfig`) for auto-wired
+    Binance price monitors.
+<4> `subscribesTo` — lists the upstream nodes this node waits for, and the
+    required boolean output value from each.
+
+=== NodeDefinition reference
+
+[source,typescript]
+----
+interface NodeDefinition {
+  name: string;
+  label?: string;
+  role: "producer" | "consumer" | "hybrid" | "decision";
+
+  // Upstream dependencies (consumer / hybrid / decision nodes)
+  subscribesTo?: (string | { node: string; requiredValue?: boolean })[];
+
+  // Required on consumer and decision nodes
+  action?: {
+    verb: "buy" | "sell";
+    token_id: string;
+    amount: number;
+  };
+
+  // Required on manual_trigger / crypto_monitor producer nodes
+  inputType?: "manual_trigger" | "crypto_price";
+
+  // Required when inputType === "crypto_monitor"
+  cryptoMonitorConfig?: {
+    symbol: string;           // e.g. "ETHUSDT"
+    condition: "drops_below" | "rises_above";
+    targetPrice: number;
+  };
+}
+----
+
+---
+
+== Step 2 — Create the Next.js API route
+
+Each `manual_trigger` producer node needs a corresponding Next.js route under
+`apps/web/app/api/` that:
+
+1. Receives the external signal (a webhook, a UI action, a scheduled check, …).
+2. Evaluates whether the condition is met.
+3. Calls the backend to fire the node, passing the result as the `output` boolean.
+
+=== Producing to the redprint
+
+The call that fires a node is a `POST` to the backend redprint API.
+It requires the *redprint ID* (returned when the blueprint was dispatched) and
+the *node name* (exactly as declared in the blueprint JSON).
+
+Internally the backend calls:
+
+[source,typescript]
+----
+redprint.writeToKey(nodeName, output);
+// where redprint = redprintManager.get(redprintId)
+----
+
+From the web tier, trigger this via the HTTP endpoint:
+
+[source]
+----
+POST http://localhost:3001/api/redprints/{redprintId}/nodes/{nodeName}
+Content-Type: application/json
+
+{ "output": true }
+----
+
+=== Route template
+
+[source,typescript]
+----
+// apps/web/app/api/<your-node>/route.ts
+import { NextRequest, NextResponse } from "next/server";
+
+const API_BASE = process.env.API_URL ?? "http://localhost:3001";
+
+export async function POST(req: NextRequest) {
+  const { redprintId } = await req.json() as { redprintId: string };
+
+  // 1. Evaluate your condition (call an external API, read a DB, etc.)
+  const conditionMet: boolean = /* your logic here */ true;
+
+  // 2. Produce to the redprint node
+  const res = await fetch(
+    `${API_BASE}/api/redprints/${redprintId}/nodes/<your-node-name>`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ output: conditionMet }),
+    },
+  );
+
+  if (!res.ok) {
+    const err = await res.json();
+    return NextResponse.json(err, { status: res.status });
+  }
+
+  return NextResponse.json({ ok: true, output: conditionMet });
+}
+----
+
+Replace `<your-node-name>` with the `name` field from the blueprint node
+definition — these must match exactly.
+
+---
+
+== Step 3 — Dispatch a redprint and capture the ID
+
+Before any node can be fired, the blueprint must be dispatched to create a
+live redprint. The ID returned is what you pass to every subsequent call.
+
+[source,sh]
+----
+curl -X POST http://localhost:3001/api/redprints \
+  -H "Content-Type: application/json" \
+  -d @apps/api/blueprints/my_blueprint.json
+----
+
+.Response
+[source,json]
+----
+{
+  "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "blueprintName": "my_blueprint",
+  "status": "running",
+  "nodes": {
+    "volume_spike": { "role": "producer", "status": "waiting", ... },
+    "decision":     { "role": "decision",  "status": "waiting", ... }
+  },
+  "decision": null,
+  "createdAt": "2026-02-22T10:00:00.000Z"
+}
+----
+
+Store `id` — your new API route will need it as `redprintId`.
+
+---
+
+== Existing node routes
+
+For reference, the existing web API routes that act as producers:
+
+[cols="2,3"]
+|===
+| Route | What it produces
+
+| `GET /api/crypto`
+| Fetches Binance price / klines / trade data. Used as a data source for
+  `crypto_monitor` producer nodes (auto-wired; no HTTP push needed).
+
+| `GET /api/polymarket`
+| Fetches market info, top markets, or price history from Polymarket GAMMA
+  and CLOB APIs.
+
+| `POST /api/chat`
+| Chat endpoint (LLM). Can be extended to evaluate a condition and push its
+  result into a manual-trigger producer node.
+|===

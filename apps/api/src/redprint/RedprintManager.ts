@@ -5,6 +5,15 @@ import type { BlueprintDefinition, NodeDefinition } from "@repo/backend/blueprin
 import { topologicalSort } from "./graph.js";
 import { getConnection } from "./nats.js";
 import type { NodeState, Redprint } from "./types.js";
+import {
+  PolymarketPriceProducer,
+  PolymarketVolumeProducer,
+  PolymarketLiquidityProducer,
+  PolymarketSpreadProducer,
+  PolymarketLastTradeProducer,
+  type PolymarketProducer,
+} from "../services/polymarket-ws.js";
+import { PolymarketCryptoMonitor } from "../services/polymarket-crypto-ws.js";
 import { getLogger } from "../utils/logger.js";
 import { NodeInstance } from "./NodeInstance.js";
 
@@ -35,14 +44,15 @@ export class RedprintManager {
    *
    * All nodes are initialised in `"waiting"` state. NATS subscriptions are
    * registered for every consumer/hybrid/decision node so that upstream events
-   * propagate through the graph automatically. Crypto-monitor producer nodes
-   * are also auto-started via {@link BinancePriceMonitor}.
+   * propagate through the graph automatically. Market producer nodes are
+   * auto-started via Polymarket WebSocket producers.
    *
    * @param blueprint - The blueprint definition to instantiate.
    * @returns The newly created and running {@link Redprint}.
    */
   dispatch(blueprint: BlueprintDefinition): Redprint {
     const id = randomUUID();
+    logger.info(`>>> DISPATCH CALLED - blueprint="${blueprint.name}" nodes=${blueprint.nodes.length}`);
     logger.trace(`dispatch() — blueprint="${blueprint.name}" nodes=${blueprint.nodes.length}`);
     logger.info(`Dispatching new redprint from blueprint "${blueprint.name}" [id=${id}]`);
 
@@ -62,7 +72,7 @@ export class RedprintManager {
     }
 
     const subscriptions: Subscription[] = [];
-    const monitors: BinancePriceMonitor[] = [];
+    const monitors: (PolymarketProducer | PolymarketCryptoMonitor)[] = [];
 
     const redprint: Redprint = {
       id,
@@ -90,11 +100,91 @@ export class RedprintManager {
     this.configureGraphSubscriptions(order, nodeDefs, redprint);
     logger.trace(`[${id.slice(0, 8)}] configureGraphSubscriptions complete — ${subscriptions.length} subscription(s) registered`);
 
-    // Auto-wire crypto monitor producer nodes
-    const cryptoProducers = blueprint.nodes.filter(
-      (n) => n.role === "producer" && n.inputType === "crypto_monitor" && n.cryptoMonitorConfig,
+    // Auto-wire market node producers
+    const marketProducers = blueprint.nodes.filter(
+      (n) => n.role === "producer" && n.inputType === "market" && n.marketConfig,
     );
-    logger.debug(`[${id.slice(0, 8)}] Wiring ${cryptoProducers.length} crypto monitor producer(s)`);
+    logger.debug(`[${id.slice(0, 8)}] Wiring ${marketProducers.length} market producer(s)`);
+
+    for (const nodeDef of marketProducers) {
+      const config = nodeDef.marketConfig!;
+      const outputs = nodeDef.outputs ?? ["price", "volume", "liquidity", "spread", "lastTrade"];
+
+      for (const outputId of outputs) {
+        let producer: PolymarketProducer;
+        const producerConfig = { tokenId: config.tokenId ?? "", marketSlug: config.slug };
+
+        switch (outputId) {
+          case "price": {
+            producer = new PolymarketPriceProducer(producerConfig);
+            producer.on("price", ({ price }: { price: number }) => {
+              const nodeState = redprint.nodes.get(nodeDef.name);
+              if (nodeState) {
+                nodeState.lastValue = price;
+              }
+              const subject = toNatsSubject(id, `${nodeDef.name}.price`);
+              logger.debug(`[${id.slice(0, 8)}] Publishing price=${price} to "${subject}"`);
+              getConnection().publish(subject, sc.encode(JSON.stringify({ output: true, value: price })));
+            });
+            break;
+          }
+          case "volume": {
+            producer = new PolymarketVolumeProducer(producerConfig);
+            producer.on("volume", ({ volume }: { volume: number }) => {
+              const subject = toNatsSubject(id, `${nodeDef.name}.volume`);
+              logger.debug(`[${id.slice(0, 8)}] Publishing volume=${volume} to "${subject}"`);
+              getConnection().publish(subject, sc.encode(JSON.stringify({ output: true, value: volume })));
+            });
+            break;
+          }
+          case "liquidity": {
+            producer = new PolymarketLiquidityProducer(producerConfig);
+            producer.on("liquidity", ({ liquidity }: { liquidity: number }) => {
+              const subject = toNatsSubject(id, `${nodeDef.name}.liquidity`);
+              logger.debug(`[${id.slice(0, 8)}] Publishing liquidity=${liquidity} to "${subject}"`);
+              getConnection().publish(subject, sc.encode(JSON.stringify({ output: true, value: liquidity })));
+            });
+            break;
+          }
+          case "spread": {
+            producer = new PolymarketSpreadProducer(producerConfig);
+            producer.on("spread", ({ spread }: { spread: number }) => {
+              const subject = toNatsSubject(id, `${nodeDef.name}.spread`);
+              logger.debug(`[${id.slice(0, 8)}] Publishing spread=${spread} to "${subject}"`);
+              getConnection().publish(subject, sc.encode(JSON.stringify({ output: true, value: spread })));
+            });
+            break;
+          }
+          case "lastTrade": {
+            producer = new PolymarketLastTradeProducer(producerConfig);
+            producer.on("lastTrade", ({ price }: { price: number }) => {
+              const subject = toNatsSubject(id, `${nodeDef.name}.lastTrade`);
+              logger.debug(`[${id.slice(0, 8)}] Publishing lastTrade=${price} to "${subject}"`);
+              getConnection().publish(subject, sc.encode(JSON.stringify({ output: true, value: price })));
+            });
+            break;
+          }
+          default:
+            continue;
+        }
+
+        producer.start();
+        monitors.push(producer);
+        logger.trace(`[${id.slice(0, 8)}] Market producer "${nodeDef.name}.${outputId}" started`);
+      }
+    }
+
+    // Auto-wire crypto monitor producer nodes
+    // Debug: log all nodes to see what's in the blueprint
+    for (const n of blueprint.nodes) {
+      if (n.inputType === "crypto_price") {
+        logger.info(`[${id.slice(0, 8)}] Found crypto node "${n.name}": role=${n.role} inputType=${n.inputType} cryptoMonitorConfig=${JSON.stringify(n.cryptoMonitorConfig)}`);
+      }
+    }
+    const cryptoProducers = blueprint.nodes.filter(
+      (n) => n.role === "producer" && n.inputType === "crypto_price" && n.cryptoMonitorConfig,
+    );
+    logger.debug(`[${id.slice(0, 8)}] Wiring ${cryptoProducers.length} crypto producer(s)`);
 
     for (const nodeDef of cryptoProducers) {
       const config = nodeDef.cryptoMonitorConfig!;
@@ -102,7 +192,7 @@ export class RedprintManager {
         `[${id.slice(0, 8)}] Starting CryptoMonitor for "${nodeDef.name}": symbol=${config.symbol} condition=${config.condition} targetPrice=${config.targetPrice}`,
       );
 
-      const monitor = new BinancePriceMonitor({
+      const monitor = new PolymarketCryptoMonitor({
         symbol: config.symbol,
         operator: config.condition,
         targetPrice: config.targetPrice,
@@ -112,10 +202,11 @@ export class RedprintManager {
         const nodeState = redprint.nodes.get(nodeDef.name);
         if (nodeState) {
           nodeState.lastPrice = price;
-          logger.trace(
-            `[${id.slice(0, 8)}] CryptoMonitor "${nodeDef.name}": ${config.symbol} @ $${price}`,
-          );
         }
+        // Publish price to NATS on every tick
+        const subject = toNatsSubject(id, `${nodeDef.name}.price`);
+        logger.debug(`[${id.slice(0, 8)}] Publishing crypto price=${price} to "${subject}"`);
+        getConnection().publish(subject, sc.encode(JSON.stringify({ output: true, value: price })));
       });
 
       monitor.on(
@@ -133,10 +224,6 @@ export class RedprintManager {
             const subject = toNatsSubject(id, nodeDef.name);
             logger.debug(`[${id.slice(0, 8)}] Publishing condition_met event to subject "${subject}"`);
             getConnection().publish(subject, sc.encode(JSON.stringify({ output: true })));
-          } else {
-            logger.debug(
-              `[${id.slice(0, 8)}] CryptoMonitor "${nodeDef.name}" condition_met ignored — node status=${nodeState?.status ?? "not found"}`,
-            );
           }
         },
       );
@@ -253,7 +340,7 @@ export class RedprintManager {
 
   /**
    * Gracefully shuts down a redprint: unsubscribes all NATS subscriptions,
-   * closes all crypto-price monitors, marks the redprint as `"completed"`,
+   * closes all market producers, marks the redprint as `"completed"`,
    * and removes it from the store.
    *
    * @param id - The ID of the redprint to tear down.
@@ -278,11 +365,11 @@ export class RedprintManager {
     }
     logger.debug(`[${id.slice(0, 8)}] Unsubscribed ${redprint.subscriptions.length} NATS subscription(s)`);
 
-    // Close all crypto price monitors
+    // Close all market producers
     for (const monitor of redprint.monitors) {
       monitor.close();
     }
-    logger.debug(`[${id.slice(0, 8)}] Closed ${redprint.monitors.length} crypto monitor(s)`);
+    logger.debug(`[${id.slice(0, 8)}] Closed ${redprint.monitors.length} market producer(s)`);
 
     redprint.status = "completed";
     const deleted = this.store.delete(id);

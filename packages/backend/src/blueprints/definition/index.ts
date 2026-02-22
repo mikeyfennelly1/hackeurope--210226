@@ -13,8 +13,9 @@ export type {
   ComparisonOperator,
   WebhookMode,
   WebhookConfig,
+  MarketOutputType,
 } from "./types.js";
 
 export { BlueprintUtils } from "./validate.js";
 export { BlueprintBuilder } from "./builder.js";
-export { toNatsSubject, resolveSubjects } from "./subject.js";
+export { toNatsSubject, toNatsSubjectWithHandle, resolveSubjects } from "./subject.js";
