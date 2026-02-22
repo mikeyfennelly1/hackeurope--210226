@@ -35,7 +35,7 @@ const nodeSchema = z.object({
     .describe("Topics this node publishes or branch names"),
   // ── input node fields ──
   inputType: z
-    .enum(["manual_trigger", "crypto_price"])
+    .enum(["manual_trigger", "crypto_price", "bluesky_keyword"])
     .optional()
     .describe("Subtype for input nodes. Defaults to 'manual_trigger'"),
   cryptoMonitorConfig: z
@@ -46,6 +46,14 @@ const nodeSchema = z.object({
     })
     .optional()
     .describe("Required for crypto_price input nodes"),
+  blueskyKeywordConfig: z
+    .object({
+      handle: z.string().describe("BlueSky handle, e.g. 'alice.bsky.social'"),
+      keyword: z.string().describe("Keyword to match in posts"),
+      pollIntervalMs: z.number().describe("Poll interval in ms (30000=30s, 60000=1m, 300000=5m)"),
+    })
+    .optional()
+    .describe("Required for bluesky_keyword input nodes"),
   // ── output node fields ──
   action: z
     .object({
@@ -159,7 +167,7 @@ const updateNodeSchema = z.object({
     .optional()
     .describe("Updated action for output nodes"),
   inputType: z
-    .enum(["manual_trigger", "crypto_price"])
+    .enum(["manual_trigger", "crypto_price", "bluesky_keyword"])
     .optional()
     .describe("Change the input node subtype"),
   cryptoMonitorConfig: z
@@ -170,6 +178,14 @@ const updateNodeSchema = z.object({
     })
     .optional()
     .describe("Updated crypto monitor configuration"),
+  blueskyKeywordConfig: z
+    .object({
+      handle: z.string(),
+      keyword: z.string(),
+      pollIntervalMs: z.number(),
+    })
+    .optional()
+    .describe("Updated BlueSky keyword monitor configuration"),
   comparisonConfig: z
     .object({
       operator: z.enum([">", "<", ">=", "<=", "==", "!="]),

@@ -85,6 +85,9 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
       ...("signalConfig" in node && node.signalConfig
         ? { signalConfig: node.signalConfig }
         : {}),
+      ...("blueskyKeywordConfig" in node && node.blueskyKeywordConfig
+        ? { blueskyKeywordConfig: node.blueskyKeywordConfig }
+        : {}),
     });
   }
 
@@ -132,6 +135,10 @@ function blueprintToContext(bp: Blueprint): string {
     if ("signalConfig" in n && n.signalConfig) {
       const sc = n.signalConfig as { marketSlug: string; windowSeconds: number; refreshMs: number };
       parts.push(`signalConfig={marketSlug:"${sc.marketSlug}", windowSeconds:${sc.windowSeconds}, refreshMs:${sc.refreshMs}}`);
+    }
+    if ("blueskyKeywordConfig" in n && n.blueskyKeywordConfig) {
+      const bk = n.blueskyKeywordConfig as { handle: string; keyword: string; pollIntervalMs: number };
+      parts.push(`blueskyKeywordConfig={handle:"${bk.handle}", keyword:"${bk.keyword}", pollIntervalMs:${bk.pollIntervalMs}}`);
     }
     if (n.marketOutcome) {
       parts.push(`marketOutcome="${n.marketOutcome}"`);

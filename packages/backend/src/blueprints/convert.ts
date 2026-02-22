@@ -90,6 +90,9 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
       ...(node.cryptoMonitorConfig
         ? { cryptoMonitorConfig: node.cryptoMonitorConfig }
         : {}),
+      ...(node.blueskyKeywordConfig
+        ? { blueskyKeywordConfig: node.blueskyKeywordConfig }
+        : {}),
       ...(node.comparisonConfig
         ? { comparisonConfig: node.comparisonConfig }
         : {}),
