@@ -95,51 +95,19 @@ async function handlePriceHistory({
   const ch = getClickHouseClient();
   const bucket = bucketOverride ?? getBucketSeconds(startTs, endTs);
 
-  // Price derivation:
-  // If maker_asset_id = token → price = taker_amount / maker_amount
-  // If taker_asset_id = token → price = maker_amount / taker_amount
   const result = await ch.query({
     query: `
       SELECT
         token_id,
-        bucket_ts,
-        avg_price,
-        total_volume,
-        trade_count
-      FROM (
-        SELECT
-          token_id,
-          intDiv(timestamp, {bucket:UInt64}) * {bucket:UInt64} AS bucket_ts,
-          avg(price) AS avg_price,
-          sum(volume) AS total_volume,
-          count() AS trade_count
-        FROM (
-          SELECT
-            maker_asset_id AS token_id,
-            timestamp,
-            taker_amount / maker_amount AS price,
-            taker_amount AS volume
-          FROM trades
-          WHERE maker_asset_id IN ({tokenIds:Array(String)})
-            AND timestamp >= {startTs:UInt64}
-            AND timestamp <= {endTs:UInt64}
-            AND maker_amount > 0
-
-          UNION ALL
-
-          SELECT
-            taker_asset_id AS token_id,
-            timestamp,
-            maker_amount / taker_amount AS price,
-            maker_amount AS volume
-          FROM trades
-          WHERE taker_asset_id IN ({tokenIds:Array(String)})
-            AND timestamp >= {startTs:UInt64}
-            AND timestamp <= {endTs:UInt64}
-            AND taker_amount > 0
-        )
-        GROUP BY token_id, bucket_ts
-      )
+        intDiv(timestamp, {bucket:UInt64}) * {bucket:UInt64} AS bucket_ts,
+        avg(price) AS avg_price,
+        sum(usdc_amount) AS total_volume,
+        count() AS trade_count
+      FROM trader_trades
+      WHERE token_id IN ({tokenIds:Array(String)})
+        AND timestamp >= {startTs:UInt64}
+        AND timestamp <= {endTs:UInt64}
+      GROUP BY token_id, bucket_ts
       ORDER BY token_id, bucket_ts
     `,
     query_params: { tokenIds, startTs, endTs, bucket },
@@ -184,11 +152,9 @@ async function handleSignals({
   // Find the most recent trade timestamp for this token (data may be stale)
   const latestResult = await ch.query({
     query: `
-      SELECT max(ts) AS latest FROM (
-        SELECT max(timestamp) AS ts FROM trades WHERE maker_asset_id = {tokenId:String} AND maker_amount > 0
-        UNION ALL
-        SELECT max(timestamp) AS ts FROM trades WHERE taker_asset_id = {tokenId:String} AND taker_amount > 0
-      )
+      SELECT max(timestamp) AS latest
+      FROM trader_trades
+      WHERE token_id = {tokenId:String}
     `,
     query_params: { tokenId },
     format: "JSONEachRow",
@@ -200,38 +166,17 @@ async function handleSignals({
   const result = await ch.query({
     query: `
       SELECT
-        countIf(side = 'buy') AS buy_count,
-        countIf(side = 'sell') AS sell_count,
-        sum(volume) AS total_volume,
-        sum(price * volume) / sum(volume) AS vwap,
+        countIf(is_buy = true) AS buy_count,
+        countIf(is_buy = false) AS sell_count,
+        sum(usdc_amount) AS total_volume,
+        sum(price * usdc_amount) / sum(usdc_amount) AS vwap,
         stddevPop(price) AS volatility,
         count() AS trade_count,
         max(timestamp) - min(timestamp) AS time_span
-      FROM (
-        SELECT
-          timestamp,
-          taker_amount / maker_amount AS price,
-          taker_amount AS volume,
-          'buy' AS side
-        FROM trades
-        WHERE maker_asset_id = {tokenId:String}
-          AND timestamp >= {startTs:UInt64}
-          AND timestamp <= {latestTs:UInt64}
-          AND maker_amount > 0
-
-        UNION ALL
-
-        SELECT
-          timestamp,
-          maker_amount / taker_amount AS price,
-          maker_amount AS volume,
-          'sell' AS side
-        FROM trades
-        WHERE taker_asset_id = {tokenId:String}
-          AND timestamp >= {startTs:UInt64}
-          AND timestamp <= {latestTs:UInt64}
-          AND taker_amount > 0
-      )
+      FROM trader_trades
+      WHERE token_id = {tokenId:String}
+        AND timestamp >= {startTs:UInt64}
+        AND timestamp <= {latestTs:UInt64}
     `,
     query_params: { tokenId, startTs, latestTs },
     format: "JSONEachRow",

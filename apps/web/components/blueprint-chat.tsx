@@ -18,6 +18,8 @@ import type {
   UpdateNodeParams,
   AddEdgeParams,
 } from "@/lib/blueprint-tools";
+import { MARKET_OUTPUT_IDS } from "@/components/market-node";
+import { SIGNAL_OUTPUT_IDS } from "@/components/signal-node";
 
 function chatStorageKey(blueprintId: string): string {
   return `chat:${blueprintId}`;
@@ -40,6 +42,13 @@ function saveChatMessages(blueprintId: string, messages: UIMessage[]): void {
   localStorage.setItem(chatStorageKey(blueprintId), JSON.stringify(messages));
 }
 
+/** Force correct output handles for node types with fixed handles. */
+function normalizeOutputs(type: string, outputs: string[] | undefined): string[] {
+  if (type === "market") return [...MARKET_OUTPUT_IDS];
+  if (type === "signal") return [...SIGNAL_OUTPUT_IDS];
+  return outputs ?? [];
+}
+
 function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
   const builder = new BlueprintBuilder(params.name);
 
@@ -50,7 +59,7 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
       label: node.label,
       position: { x: 0, y: 0 }, // Auto-laid out by computeLayout via blueprintToFlow
       inputs: ("inputs" in node ? node.inputs : undefined) ?? [],
-      outputs: ("outputs" in node ? node.outputs : undefined) ?? [],
+      outputs: normalizeOutputs(node.type, "outputs" in node ? node.outputs : undefined),
       ...("action" in node && node.action ? { action: node.action } : {}),
       ...("inputType" in node && node.inputType
         ? { inputType: node.inputType }
@@ -480,18 +489,18 @@ export function BlueprintChat({
   };
 
   return (
-    <div className="fixed bottom-4 left-[316px] z-50 flex w-[400px] flex-col border border-white/10 bg-[#111314] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+    <aside className="relative z-10 flex w-[360px] shrink-0 flex-col border-l border-white/10 bg-[#0a0a0a] font-[family-name:var(--font-geist-mono)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div className="flex items-center gap-2">
           <MessageCircle className="size-4 text-[#d4602c]" />
-          <span className="font-[family-name:var(--font-geist-mono)] text-xs font-medium uppercase tracking-[0.15em] text-white/80">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/80">
             Blueprint AI
           </span>
         </div>
         <button
           onClick={onClose}
-          className="text-white/30 transition hover:text-white/80"
+          className="text-white/30 transition-colors hover:text-white/60"
         >
           <X className="size-4" />
         </button>
@@ -501,7 +510,6 @@ export function BlueprintChat({
       <div
         ref={scrollRef}
         className="flex-1 space-y-3 overflow-y-auto p-4"
-        style={{ maxHeight: "400px", minHeight: "200px" }}
       >
         {messages.length === 0 && (
           <p className="text-center font-[family-name:var(--font-geist-mono)] text-xs text-white/30">
@@ -594,7 +602,7 @@ export function BlueprintChat({
       <div className="border-t border-white/10 p-3">
         <div className="flex gap-2">
           <input
-            className="flex-1 border border-white/10 bg-[#0a0a0a] px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none focus:border-[#d4602c]/50"
+            className="flex-1 border border-white/10 bg-[#111314] px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none focus:border-[#d4602c]/50"
             placeholder="Describe a trading pipeline..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -616,6 +624,6 @@ export function BlueprintChat({
           </Button>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }

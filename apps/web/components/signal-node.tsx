@@ -36,7 +36,7 @@ const WINDOW_OPTIONS = [
 ] as const;
 
 function formatSignalValue(id: string, value: number): string {
-  if (!isFinite(value)) return "—";
+  if (value == null || !isFinite(value)) return "—";
   switch (id) {
     case "buyVolRatio":
       return value.toFixed(2) + "x";

@@ -3178,7 +3178,11 @@ function BlueprintStudioInner() {
         data: {
           label: params.label,
           inputs: ("inputs" in params ? params.inputs : undefined) ?? [],
-          outputs: ("outputs" in params ? params.outputs : undefined) ?? [],
+          outputs: params.type === "market"
+            ? [...MARKET_OUTPUT_IDS]
+            : params.type === "signal"
+              ? [...SIGNAL_OUTPUT_IDS]
+              : ("outputs" in params ? params.outputs : undefined) ?? [],
           ...("action" in params && params.action ? { action: params.action } : {}),
           ...("inputType" in params && params.inputType
             ? { inputType: params.inputType }
@@ -3550,7 +3554,10 @@ function BlueprintStudioInner() {
             className="w-full"
             size="sm"
             variant={backtestOpen ? "default" : "outline"}
-            onClick={() => setBacktestOpen((prev) => !prev)}
+            onClick={() => {
+              setBacktestOpen((prev) => !prev);
+              setChatOpen(false);
+            }}
             disabled={!selectedBlueprint}
           >
             <BarChart3 className="size-4" />
@@ -3560,7 +3567,10 @@ function BlueprintStudioInner() {
             className="w-full"
             size="sm"
             variant={chatOpen ? "default" : "outline"}
-            onClick={() => setChatOpen((prev) => !prev)}
+            onClick={() => {
+              setChatOpen((prev) => !prev);
+              setBacktestOpen(false);
+            }}
           >
             <MessageCircle className="size-4" />
             {chatOpen ? "Close AI Chat" : "AI Chat"}
@@ -3569,7 +3579,7 @@ function BlueprintStudioInner() {
 
       </aside>
 
-      <main className="relative z-10 flex min-h-screen flex-1">
+      <main className="relative z-10 flex flex-1 overflow-hidden">
         <div className="flex-1">
           <ReactFlow
             nodes={[...displayNodes, ...phantomNodes as Node<FlowNodeData, FlowNodeType>[]]}
@@ -3860,14 +3870,16 @@ function BlueprintStudioInner() {
         />
       )}
 
-      <BlueprintChat
-        key={selectedBlueprintId}
-        blueprintId={selectedBlueprintId}
-        currentBlueprint={selectedBlueprint}
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        callbacks={chatCallbacks}
-      />
+      {chatOpen && (
+        <BlueprintChat
+          key={selectedBlueprintId}
+          blueprintId={selectedBlueprintId}
+          currentBlueprint={selectedBlueprint}
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+          callbacks={chatCallbacks}
+        />
+      )}
 
       <AlertDialog
         open={!!deletingBlueprintId}
