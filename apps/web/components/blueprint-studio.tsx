@@ -35,6 +35,8 @@ import {
   type Decision,
   type InputNodeType,
   type MarketOutcome,
+  type WebhookConfig,
+  type WebhookMode,
 } from "@repo/backend/blueprints";
 import {
   AlertCircle,
@@ -51,6 +53,7 @@ import {
   Plus,
   Square,
   Scale,
+  Globe,
   Trash2,
   TrendingUp,
   Timer,
@@ -102,7 +105,7 @@ import { cachedFetch, peekCache } from "@/lib/cached-fetch";
 const STORAGE_KEY = "blueprints:v1";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-type FlowNodeType = "inputNode" | "outputNode" | "decisionNode" | "marketNode" | "comparisonNode" | "logicGateNode" | "rateLimiterNode";
+type FlowNodeType = "inputNode" | "outputNode" | "decisionNode" | "marketNode" | "comparisonNode" | "logicGateNode" | "rateLimiterNode" | "webhookNode";
 
 export type FlowNodeData = {
   label: string;
@@ -127,6 +130,7 @@ export type FlowNodeData = {
   marketNoTokenId?: string;
   logicGateConfig?: { gateType: "and" | "or" };
   rateLimiterConfig?: { maxEvents: number; windowMs: number };
+  webhookConfig?: WebhookConfig;
 };
 
 type RedprintNodeState = {
@@ -228,6 +232,7 @@ function toFlowNodeType(
   if (type === "comparison") return "comparisonNode";
   if (type === "logic_gate") return "logicGateNode";
   if (type === "rate_limiter") return "rateLimiterNode";
+  if (type === "webhook") return "webhookNode";
   return "decisionNode";
 }
 
@@ -240,6 +245,7 @@ function toBlueprintNodeType(
   if (type === "comparisonNode") return "comparison";
   if (type === "logicGateNode") return "logic_gate";
   if (type === "rateLimiterNode") return "rate_limiter";
+  if (type === "webhookNode") return "webhook";
   return "decision";
 }
 
@@ -265,6 +271,7 @@ function blueprintToFlow(blueprint: Blueprint): {
       marketIndex: node.marketIndex,
       logicGateConfig: node.logicGateConfig,
       rateLimiterConfig: node.rateLimiterConfig,
+      webhookConfig: node.webhookConfig,
     },
   }));
 
@@ -321,6 +328,9 @@ function flowToBlueprint(
         : {}),
       ...(node.data.rateLimiterConfig
         ? { rateLimiterConfig: node.data.rateLimiterConfig }
+        : {}),
+      ...(node.data.webhookConfig
+        ? { webhookConfig: node.data.webhookConfig }
         : {}),
     })),
     edges: edges.map((edge) => ({
@@ -1405,6 +1415,43 @@ function RateLimiterNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "r
   );
 }
 
+function WebhookNode({ data, selected }: NodeProps<Node<FlowNodeData, "webhookNode">>) {
+  const mode = data.webhookConfig?.mode ?? "incoming";
+  const isIncoming = mode === "incoming";
+
+  return (
+    <BaseNode
+      label={data.label}
+      subtitle={isIncoming ? "Webhook In" : "Webhook Out"}
+      icon={<Globe className="size-3.5" />}
+      hasError={data.hasError}
+      selected={selected}
+    >
+      {!isIncoming && <Handle type="target" position={Position.Left} />}
+      {isIncoming ? (
+        <>
+          <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
+            Endpoint
+          </div>
+          <p className="mt-0.5 truncate text-[10px] text-white/50">
+            {data.webhookConfig?.path ? `/webhook/${data.webhookConfig.path}` : "Not configured"}
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
+            Target URL
+          </div>
+          <p className="mt-0.5 truncate text-[10px] text-white/50">
+            {data.webhookConfig?.url || "Not configured"}
+          </p>
+        </>
+      )}
+      {isIncoming && <Handle type="source" position={Position.Right} />}
+    </BaseNode>
+  );
+}
+
 function PhantomNode() {
   return (
     <div>
@@ -1540,6 +1587,7 @@ function FloatingNodeToolbar({
     : node.type === "decisionNode" ? "DECISION"
     : node.type === "comparisonNode" ? "COMPARISON"
     : node.type === "rateLimiterNode" ? "RATE LIMITER"
+    : node.type === "webhookNode" ? "WEBHOOK"
     : "MARKET";
 
   return (
@@ -1918,6 +1966,48 @@ function FloatingNodeToolbar({
               </ToolbarField>
             </>
           )}
+
+          {/* Webhook node: mode, path/url */}
+          {node.type === "webhookNode" && (
+            <>
+              {node.data.webhookConfig?.mode === "incoming" && (
+                <ToolbarField label="Webhook Path">
+                  <Input
+                    className="h-6 w-56 text-[11px]"
+                    value={node.data.webhookConfig?.path ?? ""}
+                    onChange={(e) =>
+                      onUpdate({
+                        webhookConfig: {
+                          ...node.data.webhookConfig,
+                          mode: "incoming",
+                          path: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="my-webhook-id"
+                  />
+                </ToolbarField>
+              )}
+              {node.data.webhookConfig?.mode === "outgoing" && (
+                <ToolbarField label="Target URL">
+                  <Input
+                    className="h-6 w-56 text-[11px]"
+                    value={node.data.webhookConfig?.url ?? ""}
+                    onChange={(e) =>
+                      onUpdate({
+                        webhookConfig: {
+                          ...node.data.webhookConfig,
+                          mode: "outgoing",
+                          url: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="https://example.com/callback"
+                  />
+                </ToolbarField>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -1933,6 +2023,7 @@ type ConnectionInfo = {
 type NodeOption = {
   type: FlowNodeType;
   inputSubType?: InputNodeType;
+  webhookMode?: WebhookMode;
   label: string;
   icon: React.ReactNode;
   hasTarget: boolean;
@@ -1942,6 +2033,7 @@ type NodeOption = {
 const INPUT_NODE_OPTIONS: NodeOption[] = [
   { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
   { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
+  { type: "webhookNode", webhookMode: "incoming", label: "Webhook In", icon: <Globe className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
 ];
 
 const LOGIC_NODE_OPTIONS: NodeOption[] = [
@@ -1952,6 +2044,7 @@ const LOGIC_NODE_OPTIONS: NodeOption[] = [
 
 const OUTPUT_NODE_OPTIONS: NodeOption[] = [
   { type: "outputNode", label: "Place Order", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
+  { type: "webhookNode", webhookMode: "outgoing", label: "Webhook Out", icon: <Globe className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
 ];
 
 const ALL_NODE_OPTIONS: NodeOption[] = [...INPUT_NODE_OPTIONS, ...LOGIC_NODE_OPTIONS, ...OUTPUT_NODE_OPTIONS];
@@ -1979,6 +2072,7 @@ function ConnectionNodePicker({
     position: { x: number; y: number },
     connectFrom: ConnectionInfo,
     inputSubType?: InputNodeType,
+    webhookMode?: WebhookMode,
   ) => void;
   onClose: () => void;
 }) {
@@ -2022,10 +2116,10 @@ function ConnectionNodePicker({
       >
         {options.map((opt) => (
           <DropdownMenuItem
-            key={`${opt.type}-${opt.inputSubType ?? ""}`}
+            key={`${opt.type}-${opt.inputSubType ?? ""}${opt.webhookMode ?? ""}`}
             className={DROPDOWN_ITEM_CLASS}
             onClick={() => {
-              onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom, opt.inputSubType);
+              onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom, opt.inputSubType, opt.webhookMode);
               onClose();
             }}
           >
@@ -2050,6 +2144,7 @@ function CanvasContextMenu({
     position: { x: number; y: number },
     connectFrom?: ConnectionInfo,
     inputSubType?: InputNodeType,
+    webhookMode?: WebhookMode,
   ) => void;
   onDeleteNode: (nodeId: string) => void;
   onClose: () => void;
@@ -2079,10 +2174,10 @@ function CanvasContextMenu({
               <DropdownMenuSubContent className={DROPDOWN_CONTENT_CLASS}>
                 {INPUT_NODE_OPTIONS.map((opt) => (
                   <DropdownMenuItem
-                    key={`${opt.type}-${opt.inputSubType ?? ""}`}
+                    key={`${opt.type}-${opt.inputSubType ?? ""}${opt.webhookMode ?? ""}`}
                     className={DROPDOWN_ITEM_CLASS}
                     onClick={() => {
-                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
+                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType, opt.webhookMode);
                       onClose();
                     }}
                   >
@@ -2100,10 +2195,10 @@ function CanvasContextMenu({
               <DropdownMenuSubContent className={DROPDOWN_CONTENT_CLASS}>
                 {LOGIC_NODE_OPTIONS.map((opt) => (
                   <DropdownMenuItem
-                    key={`${opt.type}-${opt.inputSubType ?? ""}`}
+                    key={`${opt.type}-${opt.inputSubType ?? ""}${opt.webhookMode ?? ""}`}
                     className={DROPDOWN_ITEM_CLASS}
                     onClick={() => {
-                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
+                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType, opt.webhookMode);
                       onClose();
                     }}
                   >
@@ -2121,10 +2216,10 @@ function CanvasContextMenu({
               <DropdownMenuSubContent className={DROPDOWN_CONTENT_CLASS}>
                 {OUTPUT_NODE_OPTIONS.map((opt) => (
                   <DropdownMenuItem
-                    key={`${opt.type}-${opt.inputSubType ?? ""}`}
+                    key={`${opt.type}-${opt.inputSubType ?? ""}${opt.webhookMode ?? ""}`}
                     className={DROPDOWN_ITEM_CLASS}
                     onClick={() => {
-                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
+                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType, opt.webhookMode);
                       onClose();
                     }}
                   >
@@ -2390,6 +2485,7 @@ function BlueprintStudioInner() {
     atPosition?: { x: number; y: number },
     connectFrom?: ConnectionInfo,
     inputSubType?: InputNodeType,
+    webhookMode?: WebhookMode,
   ) => {
     let position: { x: number; y: number };
 
@@ -2413,6 +2509,8 @@ function BlueprintStudioInner() {
     }
 
     const isCryptoPrice = type === "inputNode" && inputSubType === "crypto_price";
+    const isWebhookIncoming = type === "webhookNode" && webhookMode === "incoming";
+    const isWebhookOutgoing = type === "webhookNode" && webhookMode === "outgoing";
     const id = `${type}-${Date.now()}`;
     const node: Node<FlowNodeData, FlowNodeType> = {
       id,
@@ -2433,8 +2531,10 @@ function BlueprintStudioInner() {
                       ? "Rate Limit"
                       : type === "marketNode"
                         ? "Market"
-                        : "Place Order",
-        inputs: type === "inputNode" || type === "marketNode"
+                        : type === "webhookNode"
+                          ? (isWebhookIncoming ? "Webhook In" : "Webhook Out")
+                          : "Place Order",
+        inputs: type === "inputNode" || type === "marketNode" || isWebhookIncoming
           ? []
           : type === "comparisonNode"
             ? ["input-a", "input-b"]
@@ -2442,15 +2542,19 @@ function BlueprintStudioInner() {
               ? ["input-0", "input-1"]
               : type === "rateLimiterNode"
                 ? []
-                : ["topic.orders"],
+                : isWebhookOutgoing
+                  ? ["topic.webhook"]
+                  : ["topic.orders"],
         outputs:
           type === "decisionNode"
             ? ["branch-a", "branch-b"]
             : type === "marketNode"
               ? [...MARKET_OUTPUT_IDS]
-              : type === "outputNode" || type === "comparisonNode" || type === "logicGateNode" || type === "rateLimiterNode"
+              : type === "outputNode" || type === "comparisonNode" || type === "logicGateNode" || type === "rateLimiterNode" || isWebhookOutgoing
                 ? []
-                : ["topic.orders"],
+                : isWebhookIncoming
+                  ? ["topic.webhook"]
+                  : ["topic.orders"],
         ...(type === "inputNode"
           ? { inputType: inputSubType ?? "manual_trigger" }
           : {}),
@@ -2473,6 +2577,15 @@ function BlueprintStudioInner() {
           ? { rateLimiterConfig: { maxEvents: 5, windowMs: 60000 } }
           : {}),
         ...(type === "marketNode" ? { marketSlug: "" } : {}),
+        ...(type === "webhookNode"
+          ? {
+              webhookConfig: {
+                mode: webhookMode ?? "incoming",
+                ...(webhookMode === "incoming" ? { path: `hook-${Date.now()}` } : {}),
+                ...(webhookMode === "outgoing" ? { url: "" } : {}),
+              },
+            }
+          : {}),
       },
     };
 
@@ -2660,6 +2773,8 @@ function BlueprintStudioInner() {
                 ? "logicGateNode"
                 : t === "market"
                   ? "marketNode"
+                  : t === "webhook"
+                    ? "webhookNode"
                   : "outputNode";
 
       const inputType = "inputType" in params ? (params.inputType as string) : undefined;
@@ -2672,8 +2787,8 @@ function BlueprintStudioInner() {
         position: { x: 0, y: 0 }, // will be auto-laid out
         data: {
           label: params.label,
-          inputs: "inputs" in params ? params.inputs : [],
-          outputs: "outputs" in params ? params.outputs : [],
+          inputs: ("inputs" in params ? params.inputs : undefined) ?? [],
+          outputs: ("outputs" in params ? params.outputs : undefined) ?? [],
           ...("action" in params && params.action ? { action: params.action } : {}),
           ...("inputType" in params && params.inputType
             ? { inputType: params.inputType }
@@ -2689,6 +2804,9 @@ function BlueprintStudioInner() {
             : {}),
           ...("logicGateConfig" in params && params.logicGateConfig
             ? { logicGateConfig: params.logicGateConfig as { gateType: "and" | "or" } }
+            : {}),
+          ...("webhookConfig" in params && params.webhookConfig
+            ? { webhookConfig: params.webhookConfig as WebhookConfig }
             : {}),
         },
       };
@@ -2723,6 +2841,9 @@ function BlueprintStudioInner() {
             : {}),
           ...(params.logicGateConfig !== undefined
             ? { logicGateConfig: params.logicGateConfig }
+            : {}),
+          ...("webhookConfig" in params && params.webhookConfig !== undefined
+            ? { webhookConfig: params.webhookConfig }
             : {}),
         },
       };
@@ -2830,6 +2951,7 @@ function BlueprintStudioInner() {
       comparisonNode: ComparisonNode,
       logicGateNode: LogicGateNode,
       rateLimiterNode: RateLimiterNode,
+      webhookNode: WebhookNode,
       phantom: PhantomNode,
     }),
     [],

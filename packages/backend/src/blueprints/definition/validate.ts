@@ -147,9 +147,9 @@ export const BlueprintUtils = {
 
     }
 
-    // Validate consumer (output) nodes have actions
+    // Validate consumer (output) nodes have actions (skip webhook consumers)
     const consumerNodes = blueprint.nodes.filter(
-      (node) => node.role === "consumer"
+      (node) => node.role === "consumer" && !node.webhookConfig
     );
     for (const consumer of consumerNodes) {
       if (!consumer.action) {
@@ -203,6 +203,24 @@ export const BlueprintUtils = {
           errors.push({
             path: `nodes[${i}]`,
             message: `Comparison node "${node.name}" has too many upstream subscriptions (${subCount}, max 2)`,
+          });
+        }
+      }
+    }
+
+    // Webhook node validation
+    for (const node of blueprint.nodes) {
+      if (node.webhookConfig) {
+        if (node.webhookConfig.mode === "outgoing" && !node.webhookConfig.url) {
+          errors.push({
+            path: "nodes",
+            message: `Webhook node "${node.name}" in outgoing mode must have a target URL`,
+          });
+        }
+        if (node.webhookConfig.mode === "incoming" && !node.webhookConfig.path) {
+          errors.push({
+            path: "nodes",
+            message: `Webhook node "${node.name}" in incoming mode must have a path`,
           });
         }
       }

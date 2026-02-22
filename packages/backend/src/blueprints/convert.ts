@@ -40,6 +40,12 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
       role = "hybrid";
     } else if (node.type === "market") {
       role = "producer";
+    } else if (node.type === "webhook") {
+      if (node.webhookConfig?.mode === "outgoing") {
+        role = hasOutgoing.has(node.id) ? "hybrid" : "consumer";
+      } else {
+        role = "producer";
+      }
     } else {
       // "output" nodes: hybrid if they have outgoing edges, consumer otherwise
       role = hasOutgoing.has(node.id) ? "hybrid" : "consumer";
@@ -93,6 +99,9 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
         : {}),
       ...(node.rateLimiterConfig
         ? { rateLimiterConfig: node.rateLimiterConfig }
+        : {}),
+      ...(node.type === "webhook" && node.webhookConfig
+        ? { webhookConfig: node.webhookConfig }
         : {}),
     };
 

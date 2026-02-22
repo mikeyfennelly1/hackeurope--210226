@@ -11,6 +11,8 @@ export type {
   ValidationError,
   ValidationResult,
   ComparisonOperator,
+  WebhookMode,
+  WebhookConfig,
 } from "./types.js";
 
 export { BlueprintUtils } from "./validate.js";
