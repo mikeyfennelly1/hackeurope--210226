@@ -126,6 +126,8 @@ export type FlowNodeData = {
   marketSlug?: string;
   comparisonConfig?: { operator: ComparisonOperator; thresholdA?: number; thresholdB?: number };
   marketOutcome?: MarketOutcome;
+  marketTokenId?: string;
+  marketTokenIdNo?: string;
   marketIndex?: number;
   /** Transient — populated by MarketNode on fetch, not persisted */
   marketQuestions?: string[];
@@ -330,6 +332,9 @@ function flowToBlueprint(
       ...(node.data.marketSlug ? { marketSlug: node.data.marketSlug } : {}),
       ...(node.data.marketOutcome
         ? { marketOutcome: node.data.marketOutcome }
+        : {}),
+      ...(node.data.marketTokenId
+        ? { marketTokenId: node.data.marketTokenId }
         : {}),
       ...(node.data.marketIndex != null
         ? { marketIndex: node.data.marketIndex }

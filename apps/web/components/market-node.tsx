@@ -331,6 +331,14 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
         const [yesToken, noToken] = getNormalizedTokenIds(selectedMarket);
         tokenIdsRef.current = [yesToken, noToken];
         history = await fetchMarketHistory(yesToken, intv);
+        // Persist tokenIds to node data for backend producers
+        setNodes((nodes) =>
+          nodes.map((n) =>
+            n.id === id
+              ? { ...n, data: { ...n.data, marketTokenId: yesToken, marketTokenIdNo: noToken } }
+              : n
+          )
+        );
       }
 
       setFetchState({ status: "loaded", event, history });

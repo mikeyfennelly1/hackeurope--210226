@@ -29,6 +29,7 @@ export type BlueprintNode = {
   comparisonConfig?: ComparisonConfig;
   marketSlug?: string;
   marketOutcome?: MarketOutcome;
+  marketTokenId?: string;
   marketIndex?: number;
   logicGateConfig?: { gateType: "and" | "or" | "nand" | "xor" };
   rateLimiterConfig?: { maxEvents: number; windowMs: number };
