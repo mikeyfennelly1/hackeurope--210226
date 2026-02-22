@@ -1,0 +1,31 @@
+info:
+  name: 03 - Get Redprint By ID
+  type: http
+  seq: 4
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/redprints/{{redprintId}}"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        const baseUrl = bru.getEnvVar("baseUrl");
+
+        const { data: redprints } = await axios.get(`${baseUrl}/api/redprints`);
+
+        const running = redprints.find(r => r.status === "running");
+
+        if (!running) {
+          throw new Error("No running redprint found — dispatch one first");
+        }
+
+        bru.setVar("redprintId", running.id);
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

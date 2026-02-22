@@ -2,6 +2,22 @@ opencollection: 1.0.0
 
 info:
   name: hackeu
+config:
+  proxy:
+    inherit: true
+    config:
+      protocol: http
+      hostname: ""
+      port: ""
+      auth:
+        username: ""
+        password: ""
+      bypassProxy: ""
+
+request:
+  variables:
+    - name: api
+      value: redprints
 bundled: false
 extensions:
   bruno:

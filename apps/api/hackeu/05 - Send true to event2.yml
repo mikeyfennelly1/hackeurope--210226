@@ -1,0 +1,37 @@
+info:
+  name: 05 - Send true to event2
+  type: http
+  seq: 6
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/redprints/{{redprintId}}/nodes/event2"
+  body:
+    type: json
+    data: |-
+      {
+        "output": true
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        const baseUrl = bru.getEnvVar("baseUrl");
+
+        const { data: redprints } = await axios.get(`${baseUrl}/api/redprints`);
+
+        const running = redprints.find(r => r.status === "running");
+
+        if (!running) {
+          throw new Error("No running redprint found — dispatch one first");
+        }
+
+        bru.setVar("redprintId", running.id);
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
