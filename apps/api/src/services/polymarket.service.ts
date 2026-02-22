@@ -3,6 +3,7 @@ import {
   Side as SdkSide,
   OrderType as SdkOrderType,
 } from "@polymarket/clob-client";
+import { SignatureType } from "@polymarket/order-utils";
 import { Wallet } from "@ethersproject/wallet";
 import {
   PlaceOrderRequest,
@@ -39,7 +40,9 @@ export class PolymarketService {
         key: config.polymarket.apiKey,
         secret: config.polymarket.apiSecret,
         passphrase: config.polymarket.apiPassphrase,
-      }
+      },
+      SignatureType.POLY_PROXY,
+      config.polymarket.funderAddress // funderAddress (proxy wallet)
     );
 
     logger.debug("CLOB client initialized successfully");

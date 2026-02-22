@@ -7,6 +7,9 @@ import { getConnection } from "./nats.js";
 import type { NodeState, Redprint } from "./types.js";
 import { BinancePriceMonitor } from "../services/binance-ws.js";
 import { getLogger } from "../utils/logger.js";
+import { polymarketService } from "../services/polymarket.service.js";
+import { OrderSide } from "../types/common.types.js";
+import { getMarketParams } from "../utils/polymarket.js";
 
 const logger = getLogger("RedprintManager");
 const sc = StringCodec();
@@ -69,7 +72,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
 
     // Subscribe to each upstream subject
     for (const upstreamDep of nodeDef.subscribesTo) {
-      const upstream = upstreamDep.node;
+      const upstream = typeof upstreamDep === 'string' ? upstreamDep : upstreamDep.node;
       // Subject is scoped to this redprint instance: <redprint_id>.<node_name>
       const subject = toNatsSubject(id, upstream);
       logger.debug(`[${id.slice(0, 8)}] Subscribing "${nodeName}" to NATS subject "${subject}"`);
@@ -79,6 +82,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
       // Process messages async
       (async () => {
         for await (const msg of sub) {
+          logger.debug(`[${id.slice(0, 8)}] ${nodeName} received message on ${subject}`);
           const payload = sc.decode(msg.data);
           const output = JSON.parse(payload) as { output: boolean };
 
@@ -95,7 +99,8 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
 
           // Check if ALL upstream deps of this node have fired
           const allFired = nodeDef.subscribesTo!.every((dep) => {
-            const depState = redprint.nodes.get(dep.node);
+            const depNode = typeof dep === 'string' ? dep : dep.node;
+            const depState = redprint.nodes.get(depNode);
             return depState?.status === "fired";
           });
 
@@ -124,8 +129,49 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
               monitor.close();
             }
             logger.info(
-              `[${id.slice(0, 8)}] Completed — decision: ${redprint.decision} on ${nodeDef.action?.market_id}`,
+              `[${id.slice(0, 8)}] Completed — decision: ${redprint.decision}`,
             );
+          } else if (nodeDef.role === "consumer" && nodeDef.action) {
+            // Consumer (output) node: place order if all upstreams are true
+            const allUpstreamsTrue = nodeDef.subscribesTo?.every((dep) => {
+              const depNode = typeof dep === 'string' ? dep : dep.node;
+              return redprint.nodes.get(depNode)?.output === true;
+            });
+
+            if (allUpstreamsTrue) {
+              const { verb, token_id, amount } = nodeDef.action;
+
+              logger.info(
+                `[${id.slice(0, 8)}] Placing ${verb} order for ${amount} on token ${token_id}`,
+              );
+
+              // Fetch market params and place order
+              getMarketParams(token_id)
+                .then((params) => {
+                  if (!params) {
+                    logger.error(`[${id.slice(0, 8)}] Failed to fetch market params for ${token_id}`);
+                    return;
+                  }
+
+                  return polymarketService.placeOrder({
+                    tokenId: token_id,
+                    side: verb === "buy" ? OrderSide.BUY : OrderSide.SELL,
+                    amount,
+                  });
+                })
+                .then((result) => {
+                  if (result) {
+                    logger.info(`[${id.slice(0, 8)}] Order placed - orderId: ${result.orderId}`);
+                  }
+                })
+                .catch((error) => {
+                  logger.error(`[${id.slice(0, 8)}] Order failed - ${error.message}`);
+                });
+            } else {
+              logger.info(
+                `[${id.slice(0, 8)}] Output node ${nodeName} skipped - upstream condition was false`,
+              );
+            }
           } else {
             // Publish Positive to this node's subject so downstream can fire
             const nodeSubject = toNatsSubject(id, nodeName);

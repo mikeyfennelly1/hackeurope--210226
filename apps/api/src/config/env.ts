@@ -32,6 +32,9 @@ export const config = {
     get apiPassphrase() {
       return getRequiredEnv("POLYMARKET_API_PASSPHRASE");
     },
+    get funderAddress() {
+      return getRequiredEnv("POLYMARKET_FUNDER_ADDRESS");
+    },
     chainId: parseInt(getOptionalEnv("POLYMARKET_CHAIN_ID", "137"), 10),
     clobHost: getOptionalEnv(
       "POLYMARKET_CLOB_HOST",

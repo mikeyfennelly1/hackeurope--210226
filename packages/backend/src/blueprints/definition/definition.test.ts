@@ -8,13 +8,13 @@ describe("definition blueprint", () => {
       .addNode({
         name: "sink",
         role: "consumer",
-        subscribesTo: [{ node: "source", requiredValue: true }],
+        subscribesTo: ["source"],
+        action: { verb: "buy", token_id: "TEST-TOKEN", amount: 10 },
       })
       .addNode({
         name: "decision",
         role: "decision",
-        subscribesTo: [{ node: "source", requiredValue: true }],
-        action: { verb: "buy", market_id: "TEST-MARKET" },
+        subscribesTo: ["source"],
       })
       .build();
 
@@ -30,10 +30,15 @@ describe("definition blueprint", () => {
       nodes: [
         { name: "source", role: "producer" },
         {
+          name: "sink",
+          role: "consumer",
+          subscribesTo: ["source"],
+          action: { verb: "sell", token_id: "TEST-TOKEN", amount: 10 },
+        },
+        {
           name: "decision",
           role: "decision",
-          subscribesTo: [{ node: "missing-node", requiredValue: true }],
-          action: { verb: "sell", market_id: "TEST-MARKET" },
+          subscribesTo: ["missing-node"],
         },
       ],
     });
@@ -50,13 +55,17 @@ describe("definition blueprint", () => {
       name: "trade-graph",
       nodes: [
         { name: "source", role: "producer" },
-        { name: "compute", role: "hybrid", subscribesTo: [{ node: "source", requiredValue: true }] },
-        { name: "sink", role: "consumer", subscribesTo: [{ node: "compute", requiredValue: true }] },
+        { name: "compute", role: "hybrid", subscribesTo: ["source"] },
+        {
+          name: "sink",
+          role: "consumer",
+          subscribesTo: ["compute"],
+          action: { verb: "buy", token_id: "TEST-TOKEN", amount: 10 },
+        },
         {
           name: "decision",
           role: "decision",
-          subscribesTo: [{ node: "compute", requiredValue: true }],
-          action: { verb: "buy", market_id: "TEST-MARKET" },
+          subscribesTo: ["compute"],
         },
       ],
     });
