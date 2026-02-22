@@ -1,0 +1,7 @@
+name: local
+variables:
+  - name: baseUrl
+    value: http://localhost:3001
+  - name: redprintId
+    value: ""
+    disabled: true

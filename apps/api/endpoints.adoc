@@ -1,0 +1,306 @@
+= API Endpoints
+:toc: left
+:toclevels: 3
+:source-highlighter: highlight.js
+
+Base URL: `http://localhost:3001`
+
+---
+
+== Health Check
+
+=== `GET /`
+
+Returns a simple liveness message.
+
+.Response `200`
+[source,json]
+----
+{ "message": "Hello from the API" }
+----
+
+---
+
+== Redprints
+
+Redprints are live, running instances of a <<Blueprint Definition>>. They
+execute a decision graph, subscribe to market data, and track each node's
+state until a final `decision` is produced.
+
+All redprint routes are mounted under `/api`.
+
+=== `POST /api/redprints`
+
+Dispatch a new redprint from a blueprint definition.
+
+.Request body — `BlueprintDefinition`
+[source,json]
+----
+{
+  "name": "eth_price_check",
+  "nodes": [ ... ]
+}
+----
+
+`name` and `nodes` are required; returns `400` if either is missing.
+
+.Response `201` — `RedprintJSON`
+[source,json]
+----
+{
+  "id": "abc123",
+  "blueprintName": "eth_price_check",
+  "status": "running",
+  "nodes": {
+    "price_check": {
+      "label": "ETH > $3000",
+      "role": "condition",
+      "status": "waiting",
+      "output": null,
+      "firedAt": null
+    }
+  },
+  "decision": null,
+  "createdAt": "2026-02-22T10:00:00.000Z"
+}
+----
+
+---
+
+=== `GET /api/redprints`
+
+List all active (in-memory) redprints.
+
+.Response `200` — array of `RedprintJSON`
+[source,json]
+----
+[ { "id": "...", "blueprintName": "...", "status": "running", ... } ]
+----
+
+---
+
+=== `GET /api/redprints/:id`
+
+Fetch a single redprint by ID.
+
+[cols="1,3"]
+|===
+| Path param | Description
+| `id` | Redprint ID returned from `POST /api/redprints`
+|===
+
+.Response `200` — `RedprintJSON` (same shape as above)
+
+.Response `404`
+[source,json]
+----
+{ "error": "Redprint not found" }
+----
+
+---
+
+=== `POST /api/redprints/:id/nodes/:node_name`
+
+Push an external event (true/false output) into a producer or switch node.
+This is the entry point for manually triggering a node in the graph.
+
+[cols="1,3"]
+|===
+| Path param | Description
+| `id` | Redprint ID
+| `node_name` | Name of the target node (must be a producer/switch node)
+|===
+
+.Request body
+[source,json]
+----
+{ "output": true }
+----
+
+`output` must be a boolean; returns `400` otherwise.
+
+.Response `200`
+[source,json]
+----
+{ "ok": true }
+----
+
+.Response `400`
+[source,json]
+----
+{ "error": "Body must include \"output\" as a boolean" }
+----
+
+.Response `404`
+[source,json]
+----
+{ "error": "<reason from manager>" }
+----
+
+---
+
+=== `DELETE /api/redprints/:id`
+
+Tear down a redprint — unsubscribes from NATS, closes price monitors, and
+removes it from memory.
+
+[cols="1,3"]
+|===
+| Path param | Description
+| `id` | Redprint ID
+|===
+
+.Response `204` — no body
+
+.Response `404`
+[source,json]
+----
+{ "error": "Redprint not found" }
+----
+
+---
+
+== Polymarket
+
+Routes for interacting with the Polymarket CLOB. All responses are wrapped in:
+
+[source,json]
+----
+{ "success": true, "data": { ... } }
+----
+
+All routes are mounted under `/api/polymarket`.
+
+=== `POST /api/polymarket/orders`
+
+Place a market order. Validated by `validatePlaceOrder` middleware before
+reaching the handler.
+
+.Request body — `PlaceOrderRequest`
+[cols="1,1,1,3"]
+|===
+| Field | Type | Required | Description
+| `tokenId` | string | yes | YES/NO token ID for the target market
+| `side` | `"BUY"` \| `"SELL"` | yes | Order direction
+| `amount` | number | yes | USDC to spend (BUY) or shares to sell (SELL)
+| `price` | number | no | Limit price `0.00–1.00`. Omit for market price
+| `orderType` | `"FOK"` \| `"FAK"` | no | Fill-Or-Kill (default) or Fill-And-Kill
+|===
+
+.Response `201` — `PlaceOrderResponse`
+[source,json]
+----
+{
+  "success": true,
+  "data": {
+    "orderId": "order_xyz",
+    "status": "matched",
+    "tokenId": "0xabc...",
+    "side": "BUY",
+    "amount": 10,
+    "executionPrice": 0.72,
+    "filledAmount": 10,
+    "createdAt": "2026-02-22T10:00:00.000Z"
+  }
+}
+----
+
+---
+
+=== `GET /api/polymarket/orders/:orderId`
+
+Fetch the current status of an existing order.
+
+[cols="1,3"]
+|===
+| Path param | Description
+| `orderId` | Order ID returned from `POST /api/polymarket/orders`
+|===
+
+.Response `200`
+[source,json]
+----
+{ "success": true, "data": { ... } }
+----
+
+---
+
+=== `DELETE /api/polymarket/orders/:orderId`
+
+Cancel an open order.
+
+[cols="1,3"]
+|===
+| Path param | Description
+| `orderId` | Order ID to cancel
+|===
+
+.Response `200`
+[source,json]
+----
+{ "success": true, "data": { "orderId": "order_xyz", "status": "cancelled" } }
+----
+
+---
+
+=== `GET /api/polymarket/markets/:tokenId`
+
+Fetch current market info for a specific YES/NO token.
+
+[cols="1,3"]
+|===
+| Path param | Description
+| `tokenId` | Token ID (from the Polymarket CLOB)
+|===
+
+.Response `200` — `MarketInfo`
+[source,json]
+----
+{
+  "success": true,
+  "data": {
+    "conditionId": "0x...",
+    "tokenId": "0x...",
+    "outcome": "Yes",
+    "price": 0.72,
+    "tickSize": "0.01",
+    "negRisk": false
+  }
+}
+----
+
+---
+
+== Shared Types
+
+=== RedprintJSON
+
+[source,typescript]
+----
+interface RedprintJSON {
+  id: string;
+  blueprintName: string;
+  status: "running" | "completed" | "error";
+  nodes: Record<string, NodeState>;
+  decision: Decision | null;
+  createdAt: string;        // ISO 8601
+}
+
+interface NodeState {
+  label?: string;
+  role: NodeRole;
+  status: "waiting" | "fired";
+  output: unknown;
+  firedAt: string | null;   // ISO 8601
+  inputType?: string;
+  lastPrice?: number;
+}
+----
+
+=== OrderSide / OrderType
+
+[source,typescript]
+----
+enum OrderSide { BUY = "BUY", SELL = "SELL" }
+enum OrderType { FOK = "FOK", FAK = "FAK" }
+----

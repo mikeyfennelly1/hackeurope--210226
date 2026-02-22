@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
+    "dev:trace": "LOG_LEVEL=TRACE tsx watch --env-file=.env src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint --max-warnings 0",
@@ -12,7 +13,9 @@
     "test": "vitest",
     "test:unit": "vitest run --dir tests/unit",
     "test:integration": "vitest run --dir tests/integration",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "docs:build": "typedoc",
+    "docs:dev": "concurrently --kill-others --names typedoc,serve \"typedoc --watch\" \"serve docs --listen 4001\""
   },
   "dependencies": {
     "@ethersproject/providers": "^5.8.0",
@@ -35,9 +38,12 @@
     "@types/node": "^22.15.3",
     "@types/supertest": "^6.0.3",
     "@vitest/coverage-v8": "^4.0.18",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.1",
+    "serve": "^14.2.5",
     "supertest": "^7.2.2",
     "tsx": "^4.19.4",
+    "typedoc": "^0.28.17",
     "typescript": "5.9.2",
     "vitest": "^4.0.18"
   }

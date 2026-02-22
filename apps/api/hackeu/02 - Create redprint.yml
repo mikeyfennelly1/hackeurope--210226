@@ -1,0 +1,49 @@
+info:
+  name: 02 - Create redprint
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/redprints"
+  body:
+    type: json
+    data: |-
+      {
+        "name": "two_arbitrary_events",
+        "nodes": [
+          {
+            "name": "event1",
+            "role": "producer"
+          },
+          {
+            "name": "event2",
+            "role": "producer"
+          },
+          {
+            "name": "decision",
+            "role": "decision",
+            "subscribesTo": [
+              {
+                "node": "event1",
+                "requiredValue": true
+              },
+              {
+                "node": "event2",
+                "requiredValue": true
+              }
+            ],
+            "action": {
+              "verb": "buy",
+              "market_id": "ETH-USD"
+            }
+          }
+        ]
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

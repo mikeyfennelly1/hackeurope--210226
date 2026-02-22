@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType } from "express";
 import type { BlueprintDefinition } from "@repo/backend/blueprints/definition";
-import * as manager from "./manager.js";
+import { redprintManager as manager } from "./RedprintManager.js";
 import { redprintToJSON } from "./types.js";
 import { getLogger } from "../utils/logger.js";
 
@@ -26,8 +26,17 @@ redprintRouter.post("/redprints", (req, res) => {
 
 // GET /api/redprints — list all redprints
 redprintRouter.get("/redprints", (_req, res) => {
-  const all = manager.list().map(redprintToJSON);
-  logger.debug(`GET /redprints — returning ${all.length} redprint(s)`);
+  logger.debug("GET /redprints — handler entered, querying manager store");
+  const raw = manager.list();
+  logger.debug(`GET /redprints — store returned ${raw.length} redprint(s)`);
+  if (raw.length > 0) {
+    logger.debug(`GET /redprints — ids: [${raw.map((r) => r.id).join(", ")}]`);
+    logger.debug(`GET /redprints — statuses: ${raw.map((r) => `${r.id.slice(0, 8)}=${r.status}`).join(", ")}`);
+  } else {
+    logger.debug("GET /redprints — store is empty, no redprints registered");
+  }
+  const all = raw.map(redprintToJSON);
+  logger.debug(`GET /redprints — serialised ${all.length} redprint(s) to JSON, sending response`);
   res.json(all);
 });
 
