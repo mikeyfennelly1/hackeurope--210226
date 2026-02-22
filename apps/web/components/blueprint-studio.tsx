@@ -1915,18 +1915,22 @@ function FloatingNodeToolbar({
               <ToolbarField label={`Amount (${(node.data.amountType ?? "dollars") === "dollars" ? "$" : "shares"})`}>
                 <Input
                   className="h-6 w-72 text-[11px]"
-                  type="number"
-                  min={0}
-                  value={node.data.action?.amount ?? 0}
-                  onChange={(e) =>
-                    onUpdate({
-                      action: {
-                        verb: node.data.action?.verb ?? "buy",
-                        token_id: node.data.action?.token_id ?? "",
-                        amount: Number(e.target.value) || 0,
-                      },
-                    })
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  value={node.data.action?.amount || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Allow empty, digits, and decimal point
+                    if (val === "" || /^\d*\.?\d*$/.test(val)) {
+                      onUpdate({
+                        action: {
+                          verb: node.data.action?.verb ?? "buy",
+                          token_id: node.data.action?.token_id ?? "",
+                          amount: val === "" ? 0 : Number(val) || 0,
+                        },
+                      });
+                    }
+                  }}
                   placeholder="0"
                 />
               </ToolbarField>
