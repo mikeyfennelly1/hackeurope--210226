@@ -12,6 +12,14 @@ export type NodeRole = "producer" | "consumer" | "hybrid" | "decision";
 
 export type ComparisonOperator = ">" | "<" | ">=" | "<=" | "==" | "!=";
 
+export type WebhookMode = "incoming" | "outgoing";
+
+export type WebhookConfig = {
+  mode: WebhookMode;
+  path?: string;
+  url?: string;
+};
+
 export type Decision = "buy" | "sell";
 
 export interface NodeAction {
@@ -50,6 +58,7 @@ export interface NodeDefinition {
     readonly slug: string;
     readonly outcome: "yes" | "no";
   };
+  readonly webhookConfig?: WebhookConfig;
 }
 
 export interface BlueprintDefinition {

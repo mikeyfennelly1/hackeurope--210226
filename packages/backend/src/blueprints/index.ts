@@ -1,8 +1,8 @@
-import type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType } from "./definition/types";
-export type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType } from "./definition/types";
+import type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
+export type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
 export { toDefinition } from "./convert";
 
-export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison" | "logic_gate" | "rate_limiter";
+export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison" | "logic_gate" | "rate_limiter" | "webhook";
 
 export type ComparisonConfig = {
   operator: ComparisonOperator;
@@ -32,6 +32,7 @@ export type BlueprintNode = {
   marketIndex?: number;
   logicGateConfig?: { gateType: "and" | "or" };
   rateLimiterConfig?: { maxEvents: number; windowMs: number };
+  webhookConfig?: WebhookConfig;
 };
 
 export type BlueprintEdge = {
@@ -59,7 +60,9 @@ export type ValidationErrorCode =
   | "Disconnected output"
   | "Output missing action"
   | "Comparison missing operator"
-  | "Comparison wrong input count";
+  | "Comparison wrong input count"
+  | "Webhook missing URL"
+  | "Webhook missing path";
 
 export type ValidationError = {
   code: ValidationErrorCode;
@@ -255,8 +258,12 @@ function hasTerminalOutputNode(blueprint: Blueprint): boolean {
     outDegree.set(edge.source, (outDegree.get(edge.source) ?? 0) + 1);
   }
 
+  const isTerminal = (node: BlueprintNode) =>
+    node.type === "output" ||
+    (node.type === "webhook" && node.webhookConfig?.mode === "outgoing");
+
   return blueprint.nodes.some(
-    (node) => node.type === "output" && (outDegree.get(node.id) ?? 0) === 0,
+    (node) => isTerminal(node) && (outDegree.get(node.id) ?? 0) === 0,
   );
 }
 
@@ -265,7 +272,9 @@ function validateOutputsConnected(blueprint: Blueprint): ValidationError[] {
   const connectedTargets = new Set(blueprint.edges.map((edge) => edge.target));
 
   for (const node of blueprint.nodes) {
-    if (node.type === "output" && !connectedTargets.has(node.id)) {
+    const isOutputLike = node.type === "output" ||
+      (node.type === "webhook" && node.webhookConfig?.mode === "outgoing");
+    if (isOutputLike && !connectedTargets.has(node.id)) {
       errors.push({
         code: "Disconnected output",
         message: `Output node '${node.label}' has no incoming connections`,
@@ -333,6 +342,25 @@ export const BlueprintUtils = {
           errors.push({
             code: "Comparison wrong input count",
             message: `Comparison node '${node.label}' has too many incoming connections (${incomingCount}, max 2)`,
+            nodeId: node.id,
+          });
+        }
+      }
+    }
+
+    for (const node of blueprint.nodes) {
+      if (node.type === "webhook") {
+        if (node.webhookConfig?.mode === "outgoing" && !node.webhookConfig.url) {
+          errors.push({
+            code: "Webhook missing URL",
+            message: `Webhook node '${node.label}' must have a target URL`,
+            nodeId: node.id,
+          });
+        }
+        if (node.webhookConfig?.mode === "incoming" && !node.webhookConfig.path) {
+          errors.push({
+            code: "Webhook missing path",
+            message: `Webhook node '${node.label}' must have an endpoint path`,
             nodeId: node.id,
           });
         }

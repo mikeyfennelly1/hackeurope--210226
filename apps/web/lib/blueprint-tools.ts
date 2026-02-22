@@ -83,6 +83,25 @@ const comparisonNodeSchema = z.object({
   }),
 });
 
+const webhookNodeSchema = z.object({
+  type: z.literal("webhook"),
+  id: z.string().describe("Unique node id, e.g. 'webhook-1'"),
+  label: z.string().describe("Display label for this node"),
+  inputs: z
+    .array(z.string())
+    .optional()
+    .describe("Topics this node consumes (outgoing mode only)"),
+  outputs: z
+    .array(z.string())
+    .optional()
+    .describe("Topics this node publishes (incoming mode only)"),
+  webhookConfig: z.object({
+    mode: z.enum(["incoming", "outgoing"]).describe("'incoming' receives HTTP POST data, 'outgoing' sends HTTP POST to a URL"),
+    path: z.string().optional().describe("Endpoint path for incoming mode, e.g. 'my-hook'"),
+    url: z.string().optional().describe("Target URL for outgoing mode, e.g. 'https://example.com/webhook'"),
+  }),
+});
+
 // ─── Node union (extend by adding to this array) ────────────────
 const nodeSchema = z.union([
   cryptoPriceSchema,
@@ -90,6 +109,7 @@ const nodeSchema = z.union([
   decisionNodeSchema,
   outputNodeSchema,
   comparisonNodeSchema,
+  webhookNodeSchema,
 ]);
 
 const edgeSchema = z.object({
@@ -150,6 +170,14 @@ const updateNodeSchema = z.object({
     })
     .optional()
     .describe("Updated comparison config (operator and/or thresholds)"),
+  webhookConfig: z
+    .object({
+      mode: z.enum(["incoming", "outgoing"]),
+      path: z.string().optional().describe("Endpoint path for incoming mode"),
+      url: z.string().optional().describe("Target URL for outgoing mode"),
+    })
+    .optional()
+    .describe("Updated webhook configuration"),
 });
 
 export type UpdateNodeParams = z.infer<typeof updateNodeSchema>;

@@ -46,8 +46,8 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
       type: node.type,
       label: node.label,
       position: { x: 0, y: 0 }, // Auto-laid out by computeLayout via blueprintToFlow
-      inputs: "inputs" in node ? node.inputs : [],
-      outputs: "outputs" in node ? node.outputs : [],
+      inputs: ("inputs" in node ? node.inputs : undefined) ?? [],
+      outputs: ("outputs" in node ? node.outputs : undefined) ?? [],
       ...("action" in node && node.action ? { action: node.action } : {}),
       ...("inputType" in node && node.inputType
         ? { inputType: node.inputType }
@@ -57,6 +57,9 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
         : {}),
       ...("comparisonConfig" in node && node.comparisonConfig
         ? { comparisonConfig: node.comparisonConfig }
+        : {}),
+      ...("webhookConfig" in node && node.webhookConfig
+        ? { webhookConfig: node.webhookConfig }
         : {}),
     });
   }
@@ -91,6 +94,13 @@ function blueprintToContext(bp: Blueprint): string {
       if (cc.thresholdA !== undefined) ccParts.push(`thresholdA:${cc.thresholdA}`);
       if (cc.thresholdB !== undefined) ccParts.push(`thresholdB:${cc.thresholdB}`);
       parts.push(`comparisonConfig={${ccParts.join(", ")}}`);
+    }
+    if (n.webhookConfig) {
+      const wc = n.webhookConfig;
+      const wcParts = [`mode:"${wc.mode}"`];
+      if (wc.path) wcParts.push(`path:"${wc.path}"`);
+      if (wc.url) wcParts.push(`url:"${wc.url}"`);
+      parts.push(`webhookConfig={${wcParts.join(", ")}}`);
     }
     if (n.marketOutcome) {
       parts.push(`marketOutcome="${n.marketOutcome}"`);

@@ -58,6 +58,19 @@ You can both **create new blueprints** and **edit the current blueprint** on the
    - At runtime: evaluates A [operator] B and outputs true/false.
    - Use **crypto_price** nodes as comparison inputs — they stream the live price.
 
+5. **webhook** — Sends or receives HTTP POST data. Has two modes:
+
+   a. **incoming** — Receives external HTTP POST data and feeds it downstream as a producer node.
+      - \`webhookConfig\`: \`{ mode: "incoming", path: "my-hook" }\`
+      - \`outputs\`: topics it publishes
+      - No \`inputs\` — incoming webhooks don't consume anything.
+      - The endpoint will be available at \`/webhook/<path>\`.
+
+   b. **outgoing** — Sends HTTP POST to a configured URL when triggered. Acts as a consumer/terminal node.
+      - \`webhookConfig\`: \`{ mode: "outgoing", url: "https://example.com/webhook" }\`
+      - \`inputs\`: topics it consumes
+      - No \`outputs\` — outgoing webhooks don't produce anything.
+
 ## Edge rules
 
 - Edges connect a source node to a target node.
@@ -107,6 +120,12 @@ User: "Buy if BTC is above $50,000"
 
 User: "Compare BTC and ETH prices"
 → Use two crypto_price nodes (BTC and ETH), a comparison node, then connect BTC to input-a and ETH to input-b.
+
+User: "Send a webhook to https://example.com/hook when the pipeline fires"
+→ Use \`add_node\` with type "webhook", webhookConfig { mode: "outgoing", url: "https://example.com/hook" }, and connect an upstream node to it.
+
+User: "Add an incoming webhook to trigger the pipeline"
+→ Use \`add_node\` with type "webhook", webhookConfig { mode: "incoming", path: "my-trigger" }, and connect it downstream.
 
 Keep blueprint names concise and descriptive. Use clear, human-readable labels for nodes.`;
 
