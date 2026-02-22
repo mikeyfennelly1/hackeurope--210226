@@ -2,7 +2,7 @@ import type { Decision } from "./definition/types";
 export type { Decision } from "./definition/types";
 export { toDefinition } from "./convert";
 
-export type BlueprintNodeType = "input" | "output" | "decision";
+export type BlueprintNodeType = "input" | "output" | "decision" | "market";
 
 export type InputNodeType = "manual_trigger" | "crypto_monitor";
 

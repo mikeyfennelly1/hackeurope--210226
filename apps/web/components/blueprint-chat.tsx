@@ -288,18 +288,18 @@ export function BlueprintChat({
   };
 
   return (
-    <div className="fixed bottom-4 left-[316px] z-50 flex w-[400px] flex-col border border-white/10 bg-[#0d0f0f] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+    <div className="fixed bottom-4 left-[316px] z-50 flex w-[400px] flex-col border border-white/10 bg-[#111314] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div className="flex items-center gap-2">
-          <MessageCircle className="size-4 text-[#5a7a6a]" />
-          <span className="text-sm font-medium text-[#e0e5e2]">
+          <MessageCircle className="size-4 text-[#d4602c]" />
+          <span className="font-[family-name:var(--font-geist-mono)] text-xs font-medium uppercase tracking-[0.15em] text-white/80">
             Blueprint AI
           </span>
         </div>
         <button
           onClick={onClose}
-          className="text-[#5c635e] transition hover:text-[#c8ccc9]"
+          className="text-white/30 transition hover:text-white/80"
         >
           <X className="size-4" />
         </button>
@@ -312,16 +312,16 @@ export function BlueprintChat({
         style={{ maxHeight: "400px", minHeight: "200px" }}
       >
         {messages.length === 0 && (
-          <p className="text-center text-xs text-[#5c635e]">
+          <p className="text-center font-[family-name:var(--font-geist-mono)] text-xs text-white/30">
             Describe a trading pipeline and I&apos;ll create or edit the blueprint.
           </p>
         )}
         {messages.map((message) => (
           <div
             key={message.id}
-            className={`text-sm ${message.role === "user" ? "text-[#e0e5e2]" : "text-[#8a918c]"}`}
+            className={`text-sm ${message.role === "user" ? "text-white/90" : "text-white/50"}`}
           >
-            <span className="mb-1 block text-[10px] uppercase tracking-[0.18em] text-[#5c635e]">
+            <span className="mb-1 block font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-white/30">
               {message.role === "user" ? "You" : "AI"}
             </span>
             {message.parts.map((part, i) => {
@@ -349,7 +349,7 @@ export function BlueprintChat({
                     return (
                       <div
                         key={i}
-                        className="mt-1 border border-[#5a7a6a]/30 bg-[#1a1f1d] px-3 py-2 text-xs text-[#5a7a6a]"
+                        className="mt-1 border border-[#d4602c]/30 bg-[#d4602c]/5 px-3 py-2 font-[family-name:var(--font-geist-mono)] text-xs text-[#d4602c]"
                       >
                         {toolPart.state === "output-available"
                           ? String(toolPart.output)
@@ -365,7 +365,7 @@ export function BlueprintChat({
           </div>
         ))}
         {isLoading && messages[messages.length - 1]?.role === "user" && (
-          <div className="flex items-center gap-2 text-xs text-[#5c635e]">
+          <div className="flex items-center gap-2 font-[family-name:var(--font-geist-mono)] text-xs text-white/30">
             <Loader2 className="size-3 animate-spin" />
             Thinking...
           </div>
@@ -376,7 +376,7 @@ export function BlueprintChat({
       <div className="border-t border-white/10 p-3">
         <div className="flex gap-2">
           <input
-            className="flex-1 border border-white/10 bg-[#161a19] px-3 py-2 text-sm text-[#e0e5e2] placeholder-[#5c635e] outline-none focus:border-[#5a7a6a]"
+            className="flex-1 border border-white/10 bg-[#0a0a0a] px-3 py-2 text-sm text-white/90 placeholder-white/30 outline-none focus:border-[#d4602c]/50"
             placeholder="Describe a trading pipeline..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
