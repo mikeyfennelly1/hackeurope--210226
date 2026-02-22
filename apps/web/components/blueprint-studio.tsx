@@ -396,23 +396,14 @@ function BaseNode({
   );
 }
 
-<<<<<<< HEAD
 function InputNode({ data, selected }: NodeProps<Node<FlowNodeData, "inputNode">>) {
   const isCryptoMonitor = data.inputType === "crypto_monitor";
   const isCryptoPrice = data.inputType === "crypto_price";
   const isCrypto = isCryptoMonitor || isCryptoPrice;
-=======
-function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
-  const { data, selected } = props;
-  if (data.inputType === "crypto_monitor") {
-    return <CryptoMonitorNode {...props} />;
-  }
->>>>>>> origin/main
 
   return (
     <BaseNode
       label={data.label}
-<<<<<<< HEAD
       subtitle={isCryptoMonitor ? "Crypto Monitor" : isCryptoPrice ? "Crypto Price" : "Manual Trigger"}
       icon={
         isCrypto ? (
@@ -421,15 +412,10 @@ function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
           <Zap className="size-3.5" />
         )
       }
-=======
-      subtitle="Manual Trigger"
-      icon={<Zap className="size-3.5" />}
->>>>>>> origin/main
       hasError={data.hasError}
       selected={selected}
     >
       <Handle type="source" position={Position.Right} />
-<<<<<<< HEAD
       {isCryptoMonitor && data.cryptoMonitorConfig ? (
         <div className="space-y-0.5">
           <p className="text-[11px] font-medium text-[#e8a838]">
@@ -463,14 +449,6 @@ function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
           </p>
         </>
       )}
-=======
-      <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
-        Publishes
-      </div>
-      <p className="mt-0.5 text-[10px] text-white/50">
-        {data.outputs.join(", ") || "none"}
-      </p>
->>>>>>> origin/main
     </BaseNode>
   );
 }
@@ -1032,26 +1010,14 @@ type NodeOption = {
   hasSource: boolean;
 };
 
-<<<<<<< HEAD
 const ALL_NODE_OPTIONS: NodeOption[] = [
   { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
   { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
   { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
   { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
   { type: "comparisonNode", label: "Comparison", icon: <Scale className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
-=======
-const INPUT_NODE_OPTIONS: NodeOption[] = [
-  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
->>>>>>> origin/main
   { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
 ];
-
-const OTHER_NODE_OPTIONS: NodeOption[] = [
-  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
-  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
-];
-
-const ALL_NODE_OPTIONS: NodeOption[] = [...INPUT_NODE_OPTIONS, ...OTHER_NODE_OPTIONS];
 
 const DROPDOWN_CONTENT_CLASS =
   "border-white/10 bg-[#111314] shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
@@ -1212,7 +1178,6 @@ function CanvasContextMenu({
   );
 }
 
-<<<<<<< HEAD
 function InputNodeDropdown({
   onSelect,
 }: {
@@ -1270,8 +1235,6 @@ function InputNodeDropdown({
   );
 }
 
-=======
->>>>>>> origin/main
 function BlueprintStudioInner() {
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string>("");
@@ -1999,7 +1962,6 @@ function BlueprintStudioInner() {
           })}
         </div>
 
-<<<<<<< HEAD
         {/* Node Palette */}
         <div className="border-t border-white/10 px-3 py-3">
           <p className="mb-2 text-xs uppercase tracking-[0.18em] text-white/30">
@@ -2050,8 +2012,6 @@ function BlueprintStudioInner() {
           </div>
         </div>
 
-=======
->>>>>>> origin/main
         {/* AI Chat */}
         <div className="mt-auto border-t border-white/10 px-3 py-3">
           <Button
