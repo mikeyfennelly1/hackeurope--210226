@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import {
   BlueprintBuilder,
+  BlueprintUtils,
   type Blueprint,
 } from "@repo/backend/blueprints";
 import { MessageCircle, Send, X, Loader2 } from "lucide-react";
@@ -167,7 +168,8 @@ type ToolPartType =
   | "tool-add_edge"
   | "tool-delete_edge"
   | "tool-rename_blueprint"
-  | "tool-search_markets";
+  | "tool-search_markets"
+  | "tool-validate_blueprint";
 
 const TOOL_PART_TYPES: ToolPartType[] = [
   "tool-create_blueprint",
@@ -178,7 +180,11 @@ const TOOL_PART_TYPES: ToolPartType[] = [
   "tool-delete_edge",
   "tool-rename_blueprint",
   "tool-search_markets",
+  "tool-validate_blueprint",
 ];
+
+const MAX_VALIDATION_RETRIES = 10;
+const VALIDATION_FAILED_MARKER = "[VALIDATION_FAILED]";
 
 function isToolPart(type: string): type is ToolPartType {
   return TOOL_PART_TYPES.includes(type as ToolPartType);
@@ -204,6 +210,13 @@ export function BlueprintChat({
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
 
+  // Keep a ref to the current blueprint for async validation
+  const blueprintRef = useRef(currentBlueprint);
+  blueprintRef.current = currentBlueprint;
+
+  // Track validation retry count to prevent infinite loops
+  const retryCountRef = useRef(0);
+
   const blueprintContext = useMemo(
     () => (currentBlueprint ? blueprintToContext(currentBlueprint) : null),
     [currentBlueprint],
@@ -215,16 +228,25 @@ export function BlueprintChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
     sendAutomaticallyWhen: ({ messages: msgs }) => {
       // Auto-send when the last assistant message has a tool invocation
-      // with output available (e.g. search_markets completed) so the LLM
-      // can continue with a follow-up tool call (e.g. create_blueprint).
+      // with output available so the LLM can continue its work.
       const last = msgs[msgs.length - 1];
       if (last?.role !== "assistant") return false;
-      return last.parts.some(
-        (p) =>
-          p.type === "tool-search_markets" &&
-          "state" in p &&
-          p.state === "output-available",
-      );
+      return last.parts.some((p) => {
+        if (!("state" in p) || p.state !== "output-available") return false;
+        // Auto-send when search_markets completes (existing behavior)
+        if (p.type === "tool-search_markets") return true;
+        // Auto-send when blueprint validation fails to continue the fix loop
+        if (
+          (p.type === "tool-create_blueprint" ||
+            p.type === "tool-validate_blueprint") &&
+          "output" in p &&
+          typeof p.output === "string" &&
+          p.output.includes(VALIDATION_FAILED_MARKER)
+        ) {
+          return retryCountRef.current <= MAX_VALIDATION_RETRIES;
+        }
+        return false;
+      });
     },
     onToolCall: ({ toolCall }) => {
       const cb = callbacksRef.current;
@@ -237,11 +259,27 @@ export function BlueprintChat({
               toolCall.input as BlueprintToolParams,
             );
             cb.onBlueprintGenerated(blueprint);
-            addToolOutput({
-              tool: "create_blueprint",
-              toolCallId: toolCall.toolCallId,
-              output: `Blueprint "${blueprint.name}" created with ${blueprint.nodes.length} nodes.`,
-            });
+
+            // Validate immediately — the AI loop will auto-retry on errors
+            const validation = BlueprintUtils.validate(blueprint);
+            if (validation.valid) {
+              retryCountRef.current = 0;
+              addToolOutput({
+                tool: "create_blueprint",
+                toolCallId: toolCall.toolCallId,
+                output: `Blueprint "${blueprint.name}" created with ${blueprint.nodes.length} nodes. Blueprint is valid and ready to run.`,
+              });
+            } else {
+              retryCountRef.current++;
+              const errorList = validation.errors
+                .map((e, i) => `${i + 1}. ${e.message}`)
+                .join("\n");
+              addToolOutput({
+                tool: "create_blueprint",
+                toolCallId: toolCall.toolCallId,
+                output: `Blueprint "${blueprint.name}" created with ${blueprint.nodes.length} nodes.\n\n${VALIDATION_FAILED_MARKER} The blueprint has ${validation.errors.length} error(s) that must be fixed before it can run:\n${errorList}\n\nFix these errors using the edit tools (update_node, add_node, add_edge, delete_node, delete_edge), then call validate_blueprint to verify.`,
+              });
+            }
             break;
           }
 
@@ -337,6 +375,43 @@ export function BlueprintChat({
             break;
           }
 
+          case "validate_blueprint": {
+            // Async with small delay so React state reflects any preceding edits
+            setTimeout(() => {
+              const bp = blueprintRef.current;
+              if (!bp) {
+                addToolOutput({
+                  tool: "validate_blueprint",
+                  toolCallId: toolCall.toolCallId,
+                  output:
+                    "No blueprint exists yet. Create one first using create_blueprint.",
+                });
+                return;
+              }
+              const result = BlueprintUtils.validate(bp);
+              if (result.valid) {
+                retryCountRef.current = 0;
+                addToolOutput({
+                  tool: "validate_blueprint",
+                  toolCallId: toolCall.toolCallId,
+                  output: `Blueprint "${bp.name}" is valid and ready to run. All ${bp.nodes.length} nodes and ${bp.edges.length} edges are correctly configured.`,
+                });
+              } else {
+                retryCountRef.current++;
+                const errorList = result.errors
+                  .map((e, i) => `${i + 1}. ${e.message}`)
+                  .join("\n");
+                const currentState = blueprintToContext(bp);
+                addToolOutput({
+                  tool: "validate_blueprint",
+                  toolCallId: toolCall.toolCallId,
+                  output: `${VALIDATION_FAILED_MARKER} Blueprint "${bp.name}" has ${result.errors.length} error(s):\n${errorList}\n\nCurrent state:\n${currentState}\n\nFix the remaining errors using edit tools, then call validate_blueprint again.`,
+                });
+              }
+            }, 200);
+            break;
+          }
+
           default:
             break;
         }
@@ -373,6 +448,8 @@ export function BlueprintChat({
 
   const handleSend = () => {
     if (!input.trim()) return;
+    // Reset validation retry count on new user message
+    retryCountRef.current = 0;
     // Prepend current blueprint context to each user message so the LLM always knows the current state
     const text = blueprintContext
       ? `${input}\n\n---\n${blueprintContext}`
