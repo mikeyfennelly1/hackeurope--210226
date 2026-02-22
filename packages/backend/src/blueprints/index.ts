@@ -34,7 +34,7 @@ export type BlueprintNode = {
   };
   inputs: string[];
   outputs: string[];
-  action?: { verb: Decision; market_id: string };
+  action?: { verb: Decision; token_id: string; amount: number };
   inputType?: InputNodeType;
   cryptoMonitorConfig?: CryptoMonitorConfig;
   comparisonConfig?: ComparisonConfig;
@@ -65,7 +65,7 @@ export type ValidationErrorCode =
   | "Cycle detected"
   | "Missing terminal output"
   | "Disconnected output"
-  | "Decision missing action"
+  | "Output missing action"
   | "Crypto monitor missing config"
   | "Comparison missing operator"
   | "Comparison wrong input count";
@@ -309,13 +309,16 @@ export const BlueprintUtils = {
     }
 
     for (const node of blueprint.nodes) {
-      if (node.type === "decision" && (!node.action?.verb || !node.action?.market_id)) {
+      if (node.type === "output" && (!node.action?.verb || !node.action?.token_id || !node.action?.amount)) {
         errors.push({
-          code: "Decision missing action",
-          message: `Decision node '${node.label}' must have an action with verb and market_id`,
+          code: "Output missing action",
+          message: `Output node '${node.label}' must have an action with verb, token_id, and amount`,
           nodeId: node.id,
         });
       }
+    }
+
+    for (const node of blueprint.nodes) {
       if (
         node.type === "input" &&
         node.inputType === "crypto_monitor" &&

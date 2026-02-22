@@ -60,7 +60,7 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
       label: node.label,
       role,
       ...(subscribesTo && subscribesTo.length > 0
-        ? { subscribesTo: subscribesTo.map((node) => ({ node, requiredValue: true })) }
+        ? { subscribesTo }
         : {}),
       ...(node.action ? { action: node.action } : {}),
       ...(node.inputType ? { inputType: node.inputType } : {}),

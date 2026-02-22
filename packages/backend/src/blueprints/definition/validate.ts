@@ -20,7 +20,7 @@ function detectCycle(nodes: readonly NodeDefinition[]): string[] | null {
   }
   for (const node of nodes) {
     for (const dep of node.subscribesTo ?? []) {
-      adj.get(dep.node)?.push(node.name);
+      adj.get(dep)?.push(node.name);
     }
   }
 
@@ -66,10 +66,10 @@ export const BlueprintUtils = {
       const node = blueprint.nodes[i]!;
       for (let j = 0; j < (node.subscribesTo?.length ?? 0); j++) {
         const ref = node.subscribesTo![j]!;
-        if (!nodeNames.has(ref.node)) {
+        if (!nodeNames.has(ref)) {
           errors.push({
             path: `nodes[${i}].subscribesTo[${j}]`,
-            message: `References non-existent node "${ref.node}"`,
+            message: `References non-existent node "${ref}"`,
           });
         }
       }
@@ -78,7 +78,7 @@ export const BlueprintUtils = {
     const consumedNodes = new Set<string>();
     for (const node of blueprint.nodes) {
       for (const dep of node.subscribesTo ?? []) {
-        consumedNodes.add(dep.node);
+        consumedNodes.add(dep);
       }
     }
 
@@ -121,7 +121,7 @@ export const BlueprintUtils = {
       const subscribedTo = new Set<string>();
       for (const node of blueprint.nodes) {
         for (const dep of node.subscribesTo ?? []) {
-          subscribedTo.add(dep.node);
+          subscribedTo.add(dep);
         }
       }
 
@@ -139,23 +139,35 @@ export const BlueprintUtils = {
         });
       }
 
-      // 6. Decision node must have an action with verb and market_id
-      if (!decision.action) {
+    }
+
+    // Validate consumer (output) nodes have actions
+    const consumerNodes = blueprint.nodes.filter(
+      (node) => node.role === "consumer"
+    );
+    for (const consumer of consumerNodes) {
+      if (!consumer.action) {
         errors.push({
           path: `nodes`,
-          message: `Decision node "${decision.name}" must have an action`,
+          message: `Consumer node "${consumer.name}" must have an action`,
         });
       } else {
-        if (!decision.action.verb) {
+        if (!consumer.action.verb) {
           errors.push({
             path: `nodes`,
-            message: `Decision node "${decision.name}" action must have a verb`,
+            message: `Consumer node "${consumer.name}" action must have a verb`,
           });
         }
-        if (!decision.action.market_id) {
+        if (!consumer.action.token_id) {
           errors.push({
             path: `nodes`,
-            message: `Decision node "${decision.name}" action must have a market_id`,
+            message: `Consumer node "${consumer.name}" action must have a token_id`,
+          });
+        }
+        if (!consumer.action.amount || consumer.action.amount <= 0) {
+          errors.push({
+            path: `nodes`,
+            message: `Consumer node "${consumer.name}" action must have a positive amount`,
           });
         }
       }

@@ -18,7 +18,6 @@ function validBlueprint(): Blueprint {
       position: { x: 300, y: 0 },
       outputs: ["approved", "rejected"],
       inputs: ["topic.orders"],
-      action: { verb: "buy", market_id: "TEST-MARKET" },
     })
     .addNode({
       id: "output-1",
@@ -27,6 +26,7 @@ function validBlueprint(): Blueprint {
       position: { x: 600, y: 0 },
       outputs: [],
       inputs: ["topic.orders"],
+      action: { verb: "buy", token_id: "TEST-TOKEN", amount: 10 },
     })
     .addEdge({ id: "edge-1", source: "input-1", target: "decision-1" })
     .addEdge({ id: "edge-2", source: "decision-1", target: "output-1", sourceHandle: "approved" })

@@ -38,6 +38,9 @@ importers:
       '@polymarket/clob-client':
         specifier: ^5.2.4
         version: 5.2.4(typescript@5.9.2)(zod@4.3.6)
+      '@polymarket/order-utils':
+        specifier: ^3.0.1
+        version: 3.0.1(typescript@5.9.2)(zod@4.3.6)
       '@repo/backend':
         specifier: workspace:*
         version: link:../../packages/backend
@@ -47,6 +50,9 @@ importers:
       cors:
         specifier: ^2.8.6
         version: 2.8.6
+      dotenv:
+        specifier: ^17.3.1
+        version: 17.3.1
       ethers:
         specifier: ^6.16.0
         version: 6.16.0
@@ -135,6 +141,9 @@ importers:
       convex:
         specifier: ^1.32.0
         version: 1.32.0(react@19.2.0)
+      liveline:
+        specifier: ^0.0.4
+        version: 0.0.4(react@19.2.0)
       lucide-react:
         specifier: ^0.564.0
         version: 0.564.0(react@19.2.0)
@@ -2560,6 +2569,10 @@ packages:
     resolution: {integrity: sha512-7GO6HghkA5fYG9TYnNxi14/7K9f5occMlp3zXAuSxn7CKCxt9xbNWG7yF8hTCSUchlfWSe3uLmlPfigevRItzQ==}
     engines: {node: '>=12'}
 
+  dotenv@17.3.1:
+    resolution: {integrity: sha512-IO8C/dzEb6O3F9/twg6ZLXz164a2fhTnEWb95H23Dm4OuN+92NmEAlTrupP9VW6Jm3sO26tQlqyvyi4CsnY9GA==}
+    engines: {node: '>=12'}
+
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
     engines: {node: '>= 0.4'}
@@ -3179,6 +3192,12 @@ packages:
   lightningcss@1.31.1:
     resolution: {integrity: sha512-l51N2r93WmGUye3WuFoN5k10zyvrVs0qfKBhyC5ogUQ6Ew6JUSswh78mbSO+IU3nTWsyOArqPCcShdQSadghBQ==}
     engines: {node: '>= 12.0.0'}
+
+  liveline@0.0.4:
+    resolution: {integrity: sha512-l8A8e7AZxRy05OQT/tCszxOKshIYQS3FInzm4G4hhgu9VcDnS4dGubPM1NdbAYpLeVBMYQB7wnLWEcMNZwXx7Q==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=18'
 
   locate-path@6.0.0:
     resolution: {integrity: sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==}
@@ -6371,6 +6390,8 @@ snapshots:
 
   dotenv@16.0.3: {}
 
+  dotenv@17.3.1: {}
+
   dunder-proto@1.0.1:
     dependencies:
       call-bind-apply-helpers: 1.0.2
@@ -7198,6 +7219,10 @@ snapshots:
       lightningcss-linux-x64-musl: 1.31.1
       lightningcss-win32-arm64-msvc: 1.31.1
       lightningcss-win32-x64-msvc: 1.31.1
+
+  liveline@0.0.4(react@19.2.0):
+    dependencies:
+      react: 19.2.0
 
   locate-path@6.0.0:
     dependencies:
