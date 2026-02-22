@@ -2,7 +2,7 @@ import type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, 
 export type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType } from "./definition/types";
 export { toDefinition } from "./convert";
 
-export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison";
+export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison" | "logic_gate" | "rate_limiter";
 
 export type ComparisonConfig = {
   operator: ComparisonOperator;
@@ -23,11 +23,15 @@ export type BlueprintNode = {
   inputs: string[];
   outputs: string[];
   action?: { verb: Decision; token_id: string; amount: number };
+  amountType?: "dollars" | "shares";
   inputType?: InputNodeType;
   cryptoMonitorConfig?: CryptoMonitorConfig;
   comparisonConfig?: ComparisonConfig;
   marketSlug?: string;
   marketOutcome?: MarketOutcome;
+  marketIndex?: number;
+  logicGateConfig?: { gateType: "and" | "or" };
+  rateLimiterConfig?: { maxEvents: number; windowMs: number };
 };
 
 export type BlueprintEdge = {

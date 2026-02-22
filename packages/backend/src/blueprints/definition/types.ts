@@ -39,6 +39,13 @@ export interface NodeDefinition {
     readonly thresholdA?: number;
     readonly thresholdB?: number;
   };
+  readonly logicGateConfig?: {
+    readonly gateType: "and" | "or";
+  };
+  readonly rateLimiterConfig?: {
+    readonly maxEvents: number;
+    readonly windowMs: number;
+  };
   readonly marketConfig?: {
     readonly slug: string;
     readonly outcome: "yes" | "no";

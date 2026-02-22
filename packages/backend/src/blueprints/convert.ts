@@ -34,6 +34,10 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
       role = "decision";
     } else if (node.type === "comparison") {
       role = "hybrid";
+    } else if (node.type === "logic_gate") {
+      role = "hybrid";
+    } else if (node.type === "rate_limiter") {
+      role = "hybrid";
     } else if (node.type === "market") {
       role = "producer";
     } else {
@@ -55,6 +59,17 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
       subscribesTo = sorted.map((e) => e.source);
     }
 
+    // For logic gate nodes, sort by handle index (input-0, input-1, ...)
+    if (node.type === "logic_gate" && subscribesTo && subscribesTo.length > 1) {
+      const edgesForNode = blueprint.edges.filter((e) => e.target === node.id);
+      const sorted = [...edgesForNode].sort((a, b) => {
+        const idxA = parseInt(a.targetHandle?.replace("input-", "") ?? "0", 10);
+        const idxB = parseInt(b.targetHandle?.replace("input-", "") ?? "0", 10);
+        return idxA - idxB;
+      });
+      subscribesTo = sorted.map((e) => e.source);
+    }
+
     const def: NodeDefinition = {
       name: node.id,
       label: node.label,
@@ -72,6 +87,12 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
         : {}),
       ...(node.type === "market" && node.marketSlug
         ? { marketConfig: { slug: node.marketSlug, outcome: node.marketOutcome ?? "yes" } }
+        : {}),
+      ...(node.logicGateConfig
+        ? { logicGateConfig: node.logicGateConfig }
+        : {}),
+      ...(node.rateLimiterConfig
+        ? { rateLimiterConfig: node.rateLimiterConfig }
         : {}),
     };
 
