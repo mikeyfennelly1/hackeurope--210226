@@ -6,7 +6,9 @@ import { topologicalSort } from "./graph.js";
 import { getConnection } from "./nats.js";
 import type { NodeState, Redprint } from "./types.js";
 import { BinancePriceMonitor } from "../services/binance-ws.js";
+import { getLogger } from "../utils/logger.js";
 
+const logger = getLogger("RedprintManager");
 const sc = StringCodec();
 
 const store = new Map<string, Redprint>();
@@ -18,6 +20,7 @@ const store = new Map<string, Redprint>();
 export function dispatch(blueprint: BlueprintDefinition): Redprint {
   const nc = getConnection();
   const id = randomUUID();
+  logger.info(`Dispatching new redprint from blueprint "${blueprint.name}" [id=${id}]`);
 
   // Initialize node states
   const nodes = new Map<string, NodeState>();
@@ -49,8 +52,11 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
 
   store.set(id, redprint);
 
+  logger.debug(`Blueprint "${blueprint.name}" has ${blueprint.nodes.length} node(s)`);
+
   // Resolve execution order
   const order = topologicalSort(blueprint.nodes);
+  logger.trace(`Topological order: [${order.join(" → ")}]`);
 
   // Build a lookup: node name → NodeDefinition
   const nodeDefs = new Map(blueprint.nodes.map((n) => [n.name, n] as const));
@@ -66,6 +72,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
       const upstream = upstreamDep.node;
       // Subject is scoped to this redprint instance: <redprint_id>.<node_name>
       const subject = toNatsSubject(id, upstream);
+      logger.debug(`[${id.slice(0, 8)}] Subscribing "${nodeName}" to NATS subject "${subject}"`);
       const sub = nc.subscribe(subject);
       subscriptions.push(sub);
 
@@ -81,6 +88,9 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
             upstreamState.status = "fired";
             upstreamState.output = output.output;
             upstreamState.firedAt = new Date().toISOString();
+            logger.trace(
+              `[${id.slice(0, 8)}] Upstream node "${upstream}" state updated to fired (output=${output.output})`,
+            );
           }
 
           // Check if ALL upstream deps of this node have fired
@@ -89,7 +99,12 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
             return depState?.status === "fired";
           });
 
-          if (!allFired) continue;
+          if (!allFired) {
+            logger.debug(
+              `[${id.slice(0, 8)}] Node "${nodeName}" waiting — not all dependencies fired yet`,
+            );
+            continue;
+          }
 
           // Fire this node
           const nodeState = redprint.nodes.get(nodeName);
@@ -98,6 +113,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
           nodeState.status = "fired";
           nodeState.output = true;
           nodeState.firedAt = new Date().toISOString();
+          logger.info(`[${id.slice(0, 8)}] Node "${nodeName}" fired`);
 
           if (nodeDef.role === "decision") {
             // Terminal: record the decision and complete
@@ -107,12 +123,15 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
             for (const monitor of redprint.monitors) {
               monitor.close();
             }
-            console.log(
-              `Redprint ${id} completed: ${redprint.decision} on ${nodeDef.action?.market_id}`,
+            logger.info(
+              `[${id.slice(0, 8)}] Completed — decision: ${redprint.decision} on ${nodeDef.action?.market_id}`,
             );
           } else {
             // Publish Positive to this node's subject so downstream can fire
             const nodeSubject = toNatsSubject(id, nodeName);
+            logger.debug(
+              `[${id.slice(0, 8)}] Publishing Positive from "${nodeName}" to subject "${nodeSubject}"`,
+            );
             nc.publish(nodeSubject, sc.encode(JSON.stringify({ output: true })));
           }
         }
@@ -138,14 +157,17 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
         const nodeState = redprint.nodes.get(nodeDef.name);
         if (nodeState) {
           nodeState.lastPrice = price;
+          logger.trace(
+            `[${id.slice(0, 8)}] CryptoMonitor "${nodeDef.name}": ${config.symbol} @ $${price}`,
+          );
         }
       });
 
       monitor.on(
         "condition_met",
         ({ price }: { symbol: string; price: number }) => {
-          console.log(
-            `[CryptoMonitor] ${config.symbol} condition met at $${price}. Firing node "${nodeDef.name}"`,
+          logger.info(
+            `[${id.slice(0, 8)}] CryptoMonitor "${nodeDef.name}": ${config.symbol} condition met at $${price} — firing node`,
           );
           const nodeState = redprint.nodes.get(nodeDef.name);
           if (nodeState && nodeState.status === "waiting") {
@@ -186,6 +208,8 @@ export function pushEvent(
 
   const nc = getConnection();
 
+  logger.info(`[${redprintId.slice(0, 8)}] Pushing event to node "${nodeName}" (output=${output})`);
+
   // Mark the node as fired
   nodeState.status = "fired";
   nodeState.output = output;
@@ -193,6 +217,7 @@ export function pushEvent(
 
   // Publish Positive to this node's NATS subject so downstream consumers fire
   const subject = toNatsSubject(redprintId, nodeName);
+  logger.debug(`[${redprintId.slice(0, 8)}] Publishing to NATS subject "${subject}"`);
   nc.publish(subject, sc.encode(JSON.stringify({ output })));
 }
 
@@ -206,17 +231,24 @@ export function list(): Redprint[] {
 
 export function teardown(id: string): boolean {
   const redprint = store.get(id);
-  if (!redprint) return false;
+  if (!redprint) {
+    logger.warn(`Teardown requested for unknown redprint [id=${id}]`);
+    return false;
+  }
+
+  logger.info(`Tearing down redprint [id=${id.slice(0, 8)}]`);
 
   // Unsubscribe all NATS subscriptions
   for (const sub of redprint.subscriptions) {
     sub.unsubscribe();
   }
+  logger.debug(`[${id.slice(0, 8)}] Unsubscribed ${redprint.subscriptions.length} NATS subscription(s)`);
 
   // Close all crypto price monitors
   for (const monitor of redprint.monitors) {
     monitor.close();
   }
+  logger.debug(`[${id.slice(0, 8)}] Closed ${redprint.monitors.length} crypto monitor(s)`);
 
   redprint.status = "completed";
   return store.delete(id);

@@ -1,4 +1,7 @@
 import type { NodeAction } from "@repo/backend/blueprints/definition";
+import { getLogger } from "../utils/logger.js";
+
+const logger = getLogger("Decider");
 
 export class Decider {
   private readonly requiredState: Map<string, boolean>;
@@ -7,22 +10,30 @@ export class Decider {
   constructor(requiredState: Map<string, boolean>, action: NodeAction) {
     this.requiredState = requiredState;
     this.action = action;
+    logger.debug(
+      `Initialized with ${requiredState.size} rule(s) for action "${action.verb}" on market ${action.market_id}`,
+    );
   }
 
   executeRuleChain(actualState: Record<string, boolean>): boolean {
+    logger.trace(`Evaluating rule chain against state: ${JSON.stringify(actualState)}`);
     for (const [key, requiredValue] of this.requiredState) {
-      // return false if the key isn't even in the actual state
-      if (!(key in actualState)) return false;
-
-      // if the value exist, but isn't the required value, return false
-      if (actualState[key] !== requiredValue) return false;
+      if (!(key in actualState)) {
+        logger.debug(`Rule chain failed: key "${key}" missing from actual state`);
+        return false;
+      }
+      if (actualState[key] !== requiredValue) {
+        logger.debug(
+          `Rule chain failed: key "${key}" expected ${requiredValue} but got ${actualState[key]}`,
+        );
+        return false;
+      }
     }
+    logger.debug("Rule chain passed — all conditions met");
     return true;
   }
 
   executeAction(): void {
-    console.log(
-      `Executing action: ${this.action.verb} on market ${this.action.market_id}`,
-    );
+    logger.info(`Executing action: ${this.action.verb} on market ${this.action.market_id}`);
   }
 }

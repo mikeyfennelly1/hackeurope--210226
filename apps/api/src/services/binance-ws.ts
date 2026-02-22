@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { getLogger } from "../utils/logger.js";
 
 export type PriceCondition = {
   symbol: string;
@@ -17,9 +18,11 @@ export class BinancePriceMonitor extends EventEmitter {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1_000;
   private readonly MAX_RECONNECT_DELAY = 30_000;
+  private readonly logger;
 
   constructor(private readonly condition: PriceCondition) {
     super();
+    this.logger = getLogger(`BinanceWS:${condition.symbol}`);
   }
 
   start(): void {
@@ -28,10 +31,11 @@ export class BinancePriceMonitor extends EventEmitter {
     const symbol = this.condition.symbol.toLowerCase();
     const url = `wss://stream.binance.com:9443/ws/${symbol}@miniTicker`;
 
+    this.logger.info(`Connecting to ${url}`);
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      console.log(`[BinanceWS] Connected: ${symbol}`);
+      this.logger.info(`Connected — monitoring ${symbol} (${this.condition.operator} $${this.condition.targetPrice})`);
       this.reconnectDelay = 1_000;
     };
 
@@ -40,6 +44,7 @@ export class BinancePriceMonitor extends EventEmitter {
         const data = JSON.parse(String(event.data)) as { s: string; c: string };
         const price = parseFloat(data.c);
 
+        this.logger.trace(`Tick: ${data.s} @ $${price}`);
         this.emit("price", { symbol: data.s, price });
 
         const met =
@@ -48,6 +53,9 @@ export class BinancePriceMonitor extends EventEmitter {
             : price > this.condition.targetPrice;
 
         if (met) {
+          this.logger.info(
+            `Condition met: ${data.s} ${this.condition.operator} $${this.condition.targetPrice} (current=$${price})`,
+          );
           this.emit("condition_met", { symbol: data.s, price });
           this.close();
         }
@@ -57,14 +65,12 @@ export class BinancePriceMonitor extends EventEmitter {
     };
 
     this.ws.onerror = () => {
-      console.error(`[BinanceWS] Error for ${symbol}`);
+      this.logger.error(`WebSocket error for ${symbol}`);
     };
 
     this.ws.onclose = () => {
       if (!this.closed) {
-        console.log(
-          `[BinanceWS] Disconnected ${symbol}, reconnecting in ${this.reconnectDelay}ms`,
-        );
+        this.logger.warn(`Disconnected from ${symbol} — reconnecting in ${this.reconnectDelay}ms`);
         this.reconnectTimeout = setTimeout(() => {
           this.reconnectDelay = Math.min(
             this.reconnectDelay * 2,
