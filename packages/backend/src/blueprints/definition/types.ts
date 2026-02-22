@@ -1,3 +1,13 @@
+export type InputNodeType = "manual_trigger" | "crypto_monitor";
+
+export type CryptoConditionOperator = "drops_below" | "rises_above";
+
+export type CryptoMonitorConfig = {
+  symbol: string;
+  condition: CryptoConditionOperator;
+  targetPrice: number;
+};
+
 export type NodeRole = "producer" | "consumer" | "hybrid" | "decision";
 
 export type ComparisonOperator = ">" | "<" | ">=" | "<=" | "==" | "!=";

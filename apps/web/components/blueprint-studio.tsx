@@ -83,6 +83,8 @@ import { BlueprintChat, type BlueprintEditCallbacks } from "@/components/bluepri
 import type { AddNodeParams, UpdateNodeParams, AddEdgeParams } from "@/lib/blueprint-tools";
 import { CryptoMonitorNode } from "@/components/crypto-monitor-node";
 import { MarketNode } from "@/components/market-node";
+import { PulseProvider } from "@/components/pulse-context";
+import { PulseEdge } from "@/components/pulse-edge";
 import { computeLayout, GRID_SIZE } from "@/lib/auto-layout";
 
 const STORAGE_KEY = "blueprints:v1";
@@ -229,6 +231,7 @@ function blueprintToFlow(blueprint: Blueprint): {
       inputType: node.inputType,
       cryptoMonitorConfig: node.cryptoMonitorConfig,
       comparisonConfig: node.comparisonConfig,
+      marketSlug: node.marketSlug,
       marketOutcome: node.marketOutcome,
     },
   }));
@@ -239,7 +242,7 @@ function blueprintToFlow(blueprint: Blueprint): {
     target: edge.target,
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
-    type: "smoothstep",
+    type: "pulse",
     animated: false,
   }));
 
@@ -273,6 +276,7 @@ function flowToBlueprint(
       ...(node.data.comparisonConfig
         ? { comparisonConfig: node.data.comparisonConfig }
         : {}),
+      ...(node.data.marketSlug ? { marketSlug: node.data.marketSlug } : {}),
       ...(node.data.marketOutcome
         ? { marketOutcome: node.data.marketOutcome }
         : {}),
@@ -396,59 +400,27 @@ function BaseNode({
   );
 }
 
-function InputNode({ data, selected }: NodeProps<Node<FlowNodeData, "inputNode">>) {
-  const isCryptoMonitor = data.inputType === "crypto_monitor";
-  const isCryptoPrice = data.inputType === "crypto_price";
-  const isCrypto = isCryptoMonitor || isCryptoPrice;
+function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
+  const { data, selected } = props;
+  if (data.inputType === "crypto_monitor" || data.inputType === "crypto_price") {
+    return <CryptoMonitorNode {...props} />;
+  }
 
   return (
     <BaseNode
       label={data.label}
-      subtitle={isCryptoMonitor ? "Crypto Monitor" : isCryptoPrice ? "Crypto Price" : "Manual Trigger"}
-      icon={
-        isCrypto ? (
-          <TrendingUp className="size-3.5 text-[#e8a838]" />
-        ) : (
-          <Zap className="size-3.5" />
-        )
-      }
+      subtitle="Manual Trigger"
+      icon={<Zap className="size-3.5" />}
       hasError={data.hasError}
       selected={selected}
     >
       <Handle type="source" position={Position.Right} />
-      {isCryptoMonitor && data.cryptoMonitorConfig ? (
-        <div className="space-y-0.5">
-          <p className="text-[11px] font-medium text-[#e8a838]">
-            {data.cryptoMonitorConfig.symbol}
-          </p>
-          {data.cryptoMonitorConfig.targetPrice > 0 && (
-            <p className="text-[11px] text-white/40">
-              {data.cryptoMonitorConfig.condition === "drops_below"
-                ? "Drops below"
-                : "Rises above"}{" "}
-              ${data.cryptoMonitorConfig.targetPrice.toLocaleString()}
-            </p>
-          )}
-        </div>
-      ) : isCryptoPrice && data.cryptoMonitorConfig ? (
-        <div className="space-y-0.5">
-          <p className="text-[11px] font-medium text-[#e8a838]">
-            {data.cryptoMonitorConfig.symbol}
-          </p>
-          <p className="text-[10px] text-white/40">
-            Live price stream
-          </p>
-        </div>
-      ) : (
-        <>
-          <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
-            Publishes
-          </div>
-          <p className="mt-0.5 text-[10px] text-white/50">
-            {data.outputs.join(", ") || "none"}
-          </p>
-        </>
-      )}
+      <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
+        Publishes
+      </div>
+      <p className="mt-0.5 text-[10px] text-white/50">
+        {data.outputs.join(", ") || "none"}
+      </p>
     </BaseNode>
   );
 }
@@ -1010,14 +982,19 @@ type NodeOption = {
   hasSource: boolean;
 };
 
-const ALL_NODE_OPTIONS: NodeOption[] = [
-  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
-  { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
-  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
-  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
-  { type: "comparisonNode", label: "Comparison", icon: <Scale className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
-  { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
+const INPUT_NODE_OPTIONS: NodeOption[] = [
+  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
+  { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
+  { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
 ];
+
+const OTHER_NODE_OPTIONS: NodeOption[] = [
+  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
+  { type: "comparisonNode", label: "Comparison", icon: <Scale className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
+  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
+];
+
+const ALL_NODE_OPTIONS: NodeOption[] = [...INPUT_NODE_OPTIONS, ...OTHER_NODE_OPTIONS];
 
 const DROPDOWN_CONTENT_CLASS =
   "border-white/10 bg-[#111314] shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
@@ -1050,15 +1027,23 @@ function ConnectionNodePicker({
   const { flowToScreenPosition } = useReactFlow();
   const screenPos = flowToScreenPosition({ x: menu.flowX, y: menu.flowY });
 
+  const { getNode } = useReactFlow();
+  const fromNode = getNode(menu.fromNodeId);
+  const fromNodeType = fromNode?.type as FlowNodeType | undefined;
+
   const connectFrom: ConnectionInfo = {
     fromNodeId: menu.fromNodeId,
     fromHandleId: menu.fromHandleId,
     fromHandleType: menu.fromHandleType,
   };
 
-  const options = ALL_NODE_OPTIONS.filter((opt) =>
-    connectFrom.fromHandleType === "source" ? opt.hasTarget : opt.hasSource,
-  );
+  const options = ALL_NODE_OPTIONS.filter((opt) => {
+    const handleMatch = connectFrom.fromHandleType === "source" ? opt.hasTarget : opt.hasSource;
+    if (!handleMatch) return false;
+    // Don't offer the same node type as the source
+    if (opt.type === fromNodeType) return false;
+    return true;
+  });
 
   return (
     <DropdownMenu open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
@@ -1175,63 +1160,6 @@ function CanvasContextMenu({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function InputNodeDropdown({
-  onSelect,
-}: {
-  onSelect: (subType: InputNodeType) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as globalThis.Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <Button
-        variant="secondary"
-        className="w-full"
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        <Plus className="size-4" />
-        Add Input
-      </Button>
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-full border border-white/10 bg-[#111314] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-          <button
-            className={DROPDOWN_ITEM_CLASS}
-            onClick={() => {
-              onSelect("crypto_monitor");
-              setOpen(false);
-            }}
-          >
-            <TrendingUp className="size-3 text-[#e8a838]" />
-            Crypto Monitor
-          </button>
-          <button
-            className={DROPDOWN_ITEM_CLASS}
-            onClick={() => {
-              onSelect("crypto_price");
-              setOpen(false);
-            }}
-          >
-            <TrendingUp className="size-3 text-[#e8a838]" />
-            Crypto Price
-          </button>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1531,14 +1459,14 @@ function BlueprintStudioInner() {
               source: connectFrom.fromNodeId,
               target: id,
               sourceHandle: connectFrom.fromHandleId,
-              type: "smoothstep",
+              type: "pulse",
             }
           : {
               id: `edge-${Date.now()}`,
               source: id,
               target: connectFrom.fromNodeId,
               targetHandle: connectFrom.fromHandleId,
-              type: "smoothstep",
+              type: "pulse",
             };
       nextEdges = addEdge(edge, edgesRef.current);
       setEdges(nextEdges);
@@ -1569,7 +1497,7 @@ function BlueprintStudioInner() {
           id: `edge-${Date.now()}`,
           sourceHandle: connection.sourceHandle ?? undefined,
           targetHandle: connection.targetHandle ?? undefined,
-          type: "smoothstep",
+          type: "pulse",
         },
         edgesRef.current,
       );
@@ -1763,7 +1691,7 @@ function BlueprintStudioInner() {
       target: params.target,
       ...(params.sourceHandle ? { sourceHandle: params.sourceHandle } : {}),
       ...(params.targetHandle ? { targetHandle: params.targetHandle } : {}),
-      type: "smoothstep",
+      type: "pulse",
     };
     const nextEdges = addEdge(edge, edgesRef.current);
     setEdges(nextEdges);
@@ -1843,6 +1771,11 @@ function BlueprintStudioInner() {
     [],
   );
 
+  const edgeTypes = useMemo(
+    () => ({ pulse: PulseEdge }),
+    [],
+  );
+
   // Inject a phantom node + temporary edge while the connection picker is open
   const { phantomNodes, phantomEdges } = useMemo(() => {
     if (!contextMenu || contextMenu.type !== "connection") {
@@ -1862,7 +1795,7 @@ function BlueprintStudioInner() {
             source: contextMenu.fromNodeId,
             target: PHANTOM_NODE_ID,
             sourceHandle: contextMenu.fromHandleId,
-            type: "smoothstep",
+            type: "pulse",
             animated: true,
             style: { strokeDasharray: "6 3", opacity: 0.4 },
           }
@@ -1871,7 +1804,7 @@ function BlueprintStudioInner() {
             source: PHANTOM_NODE_ID,
             target: contextMenu.fromNodeId,
             targetHandle: contextMenu.fromHandleId,
-            type: "smoothstep",
+            type: "pulse",
             animated: true,
             style: { strokeDasharray: "6 3", opacity: 0.4 },
           };
@@ -1962,56 +1895,6 @@ function BlueprintStudioInner() {
           })}
         </div>
 
-        {/* Node Palette */}
-        <div className="border-t border-white/10 px-3 py-3">
-          <p className="mb-2 text-xs uppercase tracking-[0.18em] text-white/30">
-            Node Palette
-          </p>
-          <div className="grid grid-cols-1 gap-2">
-            <InputNodeDropdown
-              onSelect={(subType) =>
-                addNodeByType("inputNode", undefined, undefined, subType)
-              }
-            />
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("outputNode")}
-            >
-              Add Output
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("decisionNode")}
-            >
-              Add Decision
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("comparisonNode")}
-            >
-              Add Comparison
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => fitView({ duration: 260, padding: 0.24 })}
-            >
-              Recenter Graph
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const laid = computeLayout(nodes, edges);
-                setNodes(laid);
-                requestAnimationFrame(() => {
-                  fitView({ duration: 260, padding: 0.24 });
-                });
-              }}
-            >
-              Auto Layout
-            </Button>
-          </div>
-        </div>
-
         {/* AI Chat */}
         <div className="mt-auto border-t border-white/10 px-3 py-3">
           <Button
@@ -2033,6 +1916,7 @@ function BlueprintStudioInner() {
             nodes={[...displayNodes, ...phantomNodes as Node<FlowNodeData, FlowNodeType>[]]}
             edges={[...edges, ...phantomEdges]}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             proOptions={{ hideAttribution: true }}
             connectionLineType={ConnectionLineType.Step}
             connectionLineStyle={{ strokeDasharray: "6 3", opacity: 0.4, animation: "dashdraw 0.5s linear infinite" }}
@@ -2340,7 +2224,9 @@ function BlueprintStudioInner() {
 export function BlueprintStudio() {
   return (
     <ReactFlowProvider>
-      <BlueprintStudioInner />
+      <PulseProvider>
+        <BlueprintStudioInner />
+      </PulseProvider>
     </ReactFlowProvider>
   );
 }

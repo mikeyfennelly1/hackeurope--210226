@@ -3,16 +3,25 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { FlowNodeData } from "./blueprint-studio";
+import { usePulse } from "./pulse-context";
 
 type PricePoint = { time: number; value: number };
 
-type Interval = "15m" | "1h" | "1d" | "1w";
+type Interval = "live" | "15m" | "1h" | "1d" | "1w";
 
-const INTERVAL_CONFIG: Record<Interval, { binance: string; limit: number; label: string }> = {
-  "15m": { binance: "1m", limit: 15, label: "15M" },
-  "1h": { binance: "1m", limit: 60, label: "1H" },
-  "1d": { binance: "1h", limit: 24, label: "1D" },
-  "1w": { binance: "4h", limit: 42, label: "1W" },
+const INTERVAL_OPTIONS: { key: Interval; label: string }[] = [
+  { key: "live", label: "LIVE" },
+  { key: "15m", label: "15M" },
+  { key: "1h", label: "1H" },
+  { key: "1d", label: "1D" },
+  { key: "1w", label: "1W" },
+];
+
+const KLINE_CONFIG: Record<Exclude<Interval, "live">, { binance: string; limit: number }> = {
+  "15m": { binance: "1m", limit: 15 },
+  "1h": { binance: "1m", limit: 60 },
+  "1d": { binance: "1h", limit: 24 },
+  "1w": { binance: "4h", limit: 42 },
 };
 
 type FetchState =
@@ -139,36 +148,55 @@ function connectBinanceWs(
 }
 
 export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "inputNode">>) {
+  const { pulseNode } = usePulse();
   const [fetchState, setFetchState] = useState<FetchState>({ status: "idle" });
-  const [interval, setInterval_] = useState<Interval>("1d");
+  const [interval, setInterval_] = useState<Interval>("live");
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [liveHistory, setLiveHistory] = useState<PricePoint[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intervalRef = useRef<Interval>(interval);
+  intervalRef.current = interval;
 
   const symbol = data.cryptoMonitorConfig?.symbol ?? "";
   const condition = data.cryptoMonitorConfig?.condition ?? "drops_below";
   const targetPrice = data.cryptoMonitorConfig?.targetPrice ?? 0;
 
+  // Fetch history only (for interval changes when already loaded)
+  const fetchHistory = useCallback(async (sym: string, intv: Interval) => {
+    const binSym = toBinanceSymbol(sym);
+    let history: PricePoint[] = [];
+    if (intv === "live") {
+      const tradesRes = await fetch(
+        `/api/crypto?symbol=${encodeURIComponent(binSym)}&type=trades&seconds=60`,
+      );
+      if (tradesRes.ok) {
+        const tradesData = await tradesRes.json();
+        if (tradesData.points) history = tradesData.points;
+      }
+    } else {
+      const cfg = KLINE_CONFIG[intv];
+      const klinesRes = await fetch(
+        `/api/crypto?symbol=${encodeURIComponent(binSym)}&type=klines&interval=${encodeURIComponent(cfg.binance)}&limit=${cfg.limit}`,
+      );
+      if (klinesRes.ok) {
+        const klinesData = await klinesRes.json();
+        if (klinesData.points) history = klinesData.points;
+      }
+    }
+    return history;
+  }, []);
+
+  // Full fetch (price + history) — used on symbol change
   const fetchData = useCallback(async (sym: string, intv: Interval) => {
     const binSym = toBinanceSymbol(sym);
-    const cfg = INTERVAL_CONFIG[intv];
     try {
-      const [priceRes, klinesRes] = await Promise.all([
-        fetch(`/api/crypto?symbol=${encodeURIComponent(binSym)}`),
-        fetch(`/api/crypto?symbol=${encodeURIComponent(binSym)}&type=klines&interval=${encodeURIComponent(cfg.binance)}&limit=${cfg.limit}`),
-      ]);
-
+      const priceRes = await fetch(`/api/crypto?symbol=${encodeURIComponent(binSym)}`);
       if (!priceRes.ok) throw new Error(`HTTP ${priceRes.status}`);
       const priceData = await priceRes.json();
       if (priceData.error) throw new Error(priceData.error);
 
-      let history: PricePoint[] = [];
-      if (klinesRes.ok) {
-        const klinesData = await klinesRes.json();
-        if (klinesData.points) {
-          history = klinesData.points;
-        }
-      }
+      const history = await fetchHistory(sym, intv);
 
       setFetchState({
         status: "loaded",
@@ -186,9 +214,9 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
         message: err instanceof Error ? err.message.toUpperCase() : "FETCH FAILED",
       });
     }
-  }, []);
+  }, [fetchHistory]);
 
-  // Initial fetch on symbol/interval change
+  // Initial fetch on symbol change — full skeleton
   useEffect(() => {
     if (!symbol.trim()) {
       setFetchState({ status: "idle" });
@@ -205,7 +233,29 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [symbol, interval, fetchData]);
+    // Only re-run on symbol change, not interval
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, fetchData]);
+
+  // Interval change — only refetch history (chart skeleton only, delayed 50ms)
+  useEffect(() => {
+    if (fetchState.status !== "loaded" || !symbol.trim()) return;
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (!cancelled) setHistoryLoading(true);
+    }, 50);
+
+    fetchHistory(symbol, interval).then((history) => {
+      cancelled = true;
+      clearTimeout(timer);
+      setLiveHistory(history);
+      setHistoryLoading(false);
+    });
+
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [interval]);
 
   // Binance WebSocket for live price streaming
   useEffect(() => {
@@ -214,17 +264,22 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
     const binSym = toBinanceSymbol(symbol);
 
     const cleanup = connectBinanceWs(binSym, (price) => {
+      pulseNode(id);
       setLivePrice(price);
 
-      // Append to sparkline history
+      // Only update the chart in live mode
+      if (intervalRef.current !== "live") return;
+
       setLiveHistory((prev) => {
         const now = Math.floor(Date.now() / 1000);
         const last = prev[prev.length - 1];
-        // Throttle: only add a new point every 10s, otherwise update last
-        if (last && now - last.time < 10) {
+        if (last && now - last.time < 1) {
           return [...prev.slice(0, -1), { time: now, value: price }];
         }
-        return [...prev, { time: now, value: price }];
+        const next = [...prev, { time: now, value: price }];
+        const cutoff = now - 60;
+        const firstValid = next.findIndex((p) => p.time >= cutoff);
+        return firstValid > 0 ? next.slice(firstValid) : next;
       });
     });
 
@@ -267,20 +322,40 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
         </div>
       )}
 
-      {/* Loading state */}
+      {/* Loading skeleton */}
       {fetchState.status === "loading" && (
-        <div className="flex flex-col items-center gap-2 px-3 py-8">
-          <div className="flex gap-1">
-            {[0, 1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="h-3 w-1 animate-pulse bg-white/20"
-                style={{ animationDelay: `${i * 100}ms` }}
-              />
-            ))}
+        <div className="relative">
+          {/* Header skeleton */}
+          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+            <div className="h-3 w-24 animate-pulse rounded bg-white/10" />
+            <div className="h-3 w-10 animate-pulse rounded bg-white/10" />
           </div>
-          <div className="text-[9px] uppercase tracking-[0.3em] text-white/30">
-            FETCHING PRICE
+          {/* Price skeleton */}
+          <div className="border-b border-white/10 px-3 py-3">
+            <div className="mb-1.5 h-2.5 w-16 animate-pulse rounded bg-white/10" />
+            <div className="flex items-baseline gap-2">
+              <div className="h-7 w-36 animate-pulse rounded bg-white/10" />
+              <div className="h-3 w-12 animate-pulse rounded bg-white/10" />
+            </div>
+          </div>
+          {/* Chart skeleton */}
+          <div className="border-b border-white/10 px-3 py-2.5">
+            <div className="mb-1.5 flex items-center justify-between">
+              <div className="h-2.5 w-20 animate-pulse rounded bg-white/10" />
+              <div className="h-3 w-32 animate-pulse rounded bg-white/10" />
+            </div>
+            <div className="h-20 w-full animate-pulse rounded bg-white/[0.05]" />
+          </div>
+          {/* Stats skeleton */}
+          <div className="grid grid-cols-2 border-b border-white/10">
+            <div className="border-r border-white/10 px-3 py-2">
+              <div className="mb-1 h-2.5 w-12 animate-pulse rounded bg-white/10" />
+              <div className="h-3 w-20 animate-pulse rounded bg-white/10" />
+            </div>
+            <div className="px-3 py-2">
+              <div className="mb-1 h-2.5 w-12 animate-pulse rounded bg-white/10" />
+              <div className="h-3 w-20 animate-pulse rounded bg-white/10" />
+            </div>
           </div>
         </div>
       )}
@@ -348,28 +423,28 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
 
           {/* Price chart */}
           <div className="border-b border-white/10 px-3 py-2.5">
-            {liveHistory.length > 1 ? (
-              <div>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-[8px] uppercase tracking-[0.25em] text-white/25">PRICE HISTORY</span>
-                  <div className="nodrag flex gap-0.5">
-                    {(Object.keys(INTERVAL_CONFIG) as Interval[]).map((intv) => (
-                      <button
-                        key={intv}
-                        onClick={() => setInterval_(intv)}
-                        className={`px-1.5 py-0.5 text-[8px] uppercase tracking-[0.2em] transition-colors ${
-                          interval === intv
-                            ? "bg-[#d4602c]/20 text-[#d4602c]"
-                            : "text-white/25 hover:text-white/50"
-                        }`}
-                      >
-                        {INTERVAL_CONFIG[intv].label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <Sparkline data={liveHistory} width={314} height={80} />
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[8px] uppercase tracking-[0.25em] text-white/25">PRICE HISTORY</span>
+              <div className="nodrag flex gap-0.5">
+                {INTERVAL_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setInterval_(opt.key)}
+                    className={`px-1.5 py-0.5 text-[8px] uppercase tracking-[0.2em] transition-colors ${
+                      interval === opt.key
+                        ? "bg-[#d4602c]/20 text-[#d4602c]"
+                        : "text-white/25 hover:text-white/50"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
+            </div>
+            {historyLoading ? (
+              <div className="h-20 w-full animate-pulse rounded bg-white/[0.05]" />
+            ) : liveHistory.length > 1 ? (
+              <Sparkline data={liveHistory} width={314} height={80} />
             ) : (
               <div className="flex h-20 items-center justify-center">
                 <span className="text-[8px] uppercase tracking-[0.25em] text-white/15">NO HISTORY</span>

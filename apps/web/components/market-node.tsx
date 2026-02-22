@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
 import { ChevronDown } from "lucide-react";
 import type { FlowNodeData } from "./blueprint-studio";
+import { usePulse } from "./pulse-context";
 
 type GammaMarket = {
   question: string;
@@ -35,6 +36,16 @@ type GammaEvent = {
 };
 
 type PricePoint = { t: number; p: number };
+
+type MarketInterval = "live" | "1d" | "1w" | "1m" | "all";
+
+const MARKET_INTERVAL_OPTIONS: { key: MarketInterval; label: string; clobInterval: string; fidelity: string }[] = [
+  { key: "live", label: "LIVE", clobInterval: "", fidelity: "" },
+  { key: "1d", label: "1D", clobInterval: "1d", fidelity: "60" },
+  { key: "1w", label: "1W", clobInterval: "1w", fidelity: "60" },
+  { key: "1m", label: "1M", clobInterval: "1m", fidelity: "60" },
+  { key: "all", label: "ALL", clobInterval: "all", fidelity: "60" },
+];
 
 type FetchState =
   | { status: "idle" }
@@ -214,16 +225,47 @@ function Sparkline({ data, width, height }: { data: PricePoint[]; width: number;
 }
 
 export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "marketNode">>) {
+  const { pulseNode } = usePulse();
   const { setNodes } = useReactFlow();
   const [fetchState, setFetchState] = useState<FetchState>({ status: "idle" });
   const [specsOpen, setSpecsOpen] = useState(false);
+  const [marketInterval, setMarketInterval] = useState<MarketInterval>("all");
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [livePrices, setLivePrices] = useState<Record<string, { price: number; bestBid?: number; bestAsk?: number }>>({});
   const [liveHistory, setLiveHistory] = useState<PricePoint[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tokenIdsRef = useRef<string[]>([]);
+  const marketIntervalRef = useRef<MarketInterval>(marketInterval);
+  marketIntervalRef.current = marketInterval;
 
-  const fetchMarket = useCallback(async (slug: string) => {
+  // Fetch history only (for interval changes)
+  const fetchMarketHistory = useCallback(async (tokenId: string, intv: MarketInterval): Promise<PricePoint[]> => {
+    const cfg = intv === "live"
+      ? { clobInterval: "1d", fidelity: "60" }
+      : MARKET_INTERVAL_OPTIONS.find((o) => o.key === intv)!;
+    try {
+      const histRes = await fetch(
+        `/api/polymarket?tokenId=${encodeURIComponent(tokenId)}&interval=${encodeURIComponent(cfg.clobInterval)}&fidelity=${encodeURIComponent(cfg.fidelity)}`,
+      );
+      if (histRes.ok) {
+        const histData = (await histRes.json()) as { history: PricePoint[] };
+        let history = histData.history ?? [];
+        if (intv === "live" && history.length > 0) {
+          const cutoff = Math.floor(Date.now() / 1000) - 60;
+          const trimmed = history.filter((p) => p.t >= cutoff);
+          history = trimmed.length >= 2 ? trimmed : history.slice(-10);
+        }
+        return history;
+      }
+    } catch {
+      // Price history is non-critical
+    }
+    return [];
+  }, []);
+
+  // Full fetch (event + history) — used on slug change
+  const fetchMarket = useCallback(async (slug: string, intv: MarketInterval) => {
     setFetchState({ status: "loading" });
     try {
       const res = await fetch(
@@ -246,17 +288,7 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
         tokenIdsRef.current = tokenIds ?? [];
         const yesTokenId = tokenIds?.[0];
         if (yesTokenId) {
-          try {
-            const histRes = await fetch(
-              `/api/polymarket?tokenId=${encodeURIComponent(yesTokenId)}`,
-            );
-            if (histRes.ok) {
-              const histData = (await histRes.json()) as { history: PricePoint[] };
-              history = histData.history ?? [];
-            }
-          } catch {
-            // Price history is non-critical
-          }
+          history = await fetchMarketHistory(yesTokenId, intv);
         }
       }
 
@@ -269,8 +301,9 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
         message: err instanceof Error ? err.message.toUpperCase() : "FETCH FAILED",
       });
     }
-  }, []);
+  }, [fetchMarketHistory]);
 
+  // Slug change — full skeleton
   useEffect(() => {
     const slug = data.marketSlug?.trim();
     if (!slug) {
@@ -279,12 +312,36 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      fetchMarket(slug);
+      fetchMarket(slug, marketInterval);
     }, 500);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
+    // Only re-run on slug change, not interval
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.marketSlug, fetchMarket]);
+
+  // Interval change — only refetch history (chart skeleton only, delayed 50ms)
+  useEffect(() => {
+    if (fetchState.status !== "loaded") return;
+    const yesTokenId = tokenIdsRef.current[0];
+    if (!yesTokenId) return;
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (!cancelled) setHistoryLoading(true);
+    }, 50);
+
+    fetchMarketHistory(yesTokenId, marketInterval).then((history) => {
+      cancelled = true;
+      clearTimeout(timer);
+      setLiveHistory(history);
+      setHistoryLoading(false);
+    });
+
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marketInterval]);
 
   // Connect WebSocket when loaded
   useEffect(() => {
@@ -296,23 +353,25 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
     setWsConnected(false);
 
     const cleanup = connectPolymarketWs(tokenIds, (assetId, price, bestBid, bestAsk) => {
+      pulseNode(id);
       setWsConnected(true);
       setLivePrices((prev) => ({
         ...prev,
         [assetId]: { price, bestBid: bestBid ?? prev[assetId]?.bestBid, bestAsk: bestAsk ?? prev[assetId]?.bestAsk },
       }));
 
-      // Append to sparkline history for the YES token
-      if (assetId === yesTokenId) {
+      // Only update the chart in live mode
+      if (assetId === yesTokenId && marketIntervalRef.current === "live") {
         setLiveHistory((prev) => {
           const now = Math.floor(Date.now() / 1000);
           const last = prev[prev.length - 1];
-          // Throttle: only add a point if >10s since last
-          if (last && now - last.t < 10) {
-            // Update the last point's price instead
+          if (last && now - last.t < 1) {
             return [...prev.slice(0, -1), { t: now, p: price }];
           }
-          return [...prev, { t: now, p: price }];
+          const next = [...prev, { t: now, p: price }];
+          const cutoff = now - 60;
+          const firstValid = next.findIndex((pt) => pt.t >= cutoff);
+          return firstValid > 0 ? next.slice(firstValid) : next;
         });
       }
     });
@@ -374,18 +433,42 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
       )}
 
       {fetchState.status === "loading" && (
-        <div className="flex flex-col items-center gap-2 px-3 py-8">
-          <div className="flex gap-1">
-            {[0, 1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="h-3 w-1 animate-pulse bg-white/20"
-                style={{ animationDelay: `${i * 100}ms` }}
-              />
-            ))}
+        <div className="relative">
+          {/* Question skeleton */}
+          <div className="border-b border-white/10 px-3 py-3">
+            <div className="mb-1 h-3.5 w-full animate-pulse rounded bg-white/10" />
+            <div className="h-3.5 w-3/4 animate-pulse rounded bg-white/10" />
           </div>
-          <div className="text-[9px] uppercase tracking-[0.3em] text-white/30">
-            FETCHING DATA
+          {/* Outcome prices skeleton */}
+          <div className="grid grid-cols-2 border-b border-white/10">
+            <div className="border-r border-white/10 px-3 py-3">
+              <div className="mb-1.5 h-2.5 w-8 animate-pulse rounded bg-white/10" />
+              <div className="h-7 w-16 animate-pulse rounded bg-white/10" />
+            </div>
+            <div className="px-3 py-3">
+              <div className="mb-1.5 h-2.5 w-6 animate-pulse rounded bg-white/10" />
+              <div className="h-7 w-16 animate-pulse rounded bg-white/10" />
+            </div>
+          </div>
+          {/* Chart skeleton */}
+          <div className="border-b border-white/10 px-3 py-2.5">
+            <div className="mb-1.5 flex items-center justify-between">
+              <div className="h-2.5 w-20 animate-pulse rounded bg-white/10" />
+              <div className="h-3 w-32 animate-pulse rounded bg-white/10" />
+            </div>
+            <div className="h-20 w-full animate-pulse rounded bg-white/[0.05]" />
+          </div>
+          {/* Specs skeleton */}
+          <div className="border-b border-white/10">
+            <div className="flex items-center justify-between px-3 py-1.5">
+              <div className="h-2.5 w-10 animate-pulse rounded bg-white/10" />
+              <div className="size-3 animate-pulse rounded bg-white/10" />
+            </div>
+          </div>
+          {/* Footer skeleton */}
+          <div className="flex items-center justify-between px-3 py-2">
+            <div className="h-2.5 w-28 animate-pulse rounded bg-white/10" />
+            <div className="h-2.5 w-14 animate-pulse rounded bg-white/10" />
           </div>
         </div>
       )}
@@ -401,7 +484,7 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
             className="text-[9px] uppercase tracking-[0.2em] text-white/30 transition-colors hover:text-[#d4602c]"
             onClick={() => {
               const slug = data.marketSlug?.trim();
-              if (slug) fetchMarket(slug);
+              if (slug) fetchMarket(slug, marketInterval);
             }}
           >
             {">"} RETRY
@@ -462,19 +545,35 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
             </div>
           </div>
 
-          {/* Price chart — taller */}
+          {/* Price chart */}
           <div className="border-b border-white/10 px-3 py-2.5">
-            {history.length > 1 ? (
-              <div>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-[8px] uppercase tracking-[0.25em] text-white/25">PRICE HISTORY</span>
-                  <span className="text-[8px] uppercase tracking-[0.25em] text-white/25">ALL TIME</span>
-                </div>
-                <Sparkline data={history} width={314} height={80} />
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[8px] uppercase tracking-[0.25em] text-white/25">PRICE HISTORY</span>
+              <div className="nodrag flex gap-0.5">
+                {MARKET_INTERVAL_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setMarketInterval(opt.key)}
+                    className={`px-1.5 py-0.5 text-[8px] uppercase tracking-[0.2em] transition-colors ${
+                      marketInterval === opt.key
+                        ? "bg-[#d4602c]/20 text-[#d4602c]"
+                        : "text-white/25 hover:text-white/50"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
+            </div>
+            {historyLoading ? (
+              <div className="h-20 w-full animate-pulse rounded bg-white/[0.05]" />
+            ) : history.length > 1 ? (
+              <Sparkline data={history} width={314} height={80} />
             ) : (
               <div className="flex h-20 items-center justify-center">
-                <span className="text-[8px] uppercase tracking-[0.25em] text-white/15">NO HISTORY</span>
+                <span className="text-[8px] uppercase tracking-[0.25em] text-white/15">
+                  {marketInterval === "live" ? "WAITING FOR TRADES" : "NO HISTORY"}
+                </span>
               </div>
             )}
           </div>
@@ -562,7 +661,6 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
         }}
       />
 
-      <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
     </div>
   );
