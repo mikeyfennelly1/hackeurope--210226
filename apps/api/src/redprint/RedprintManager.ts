@@ -5,7 +5,6 @@ import type { BlueprintDefinition, NodeDefinition } from "@repo/backend/blueprin
 import { topologicalSort } from "./graph.js";
 import { getConnection } from "./nats.js";
 import type { NodeState, Redprint } from "./types.js";
-import { BinancePriceMonitor } from "../services/binance-ws.js";
 import { getLogger } from "../utils/logger.js";
 import { NodeInstance } from "./NodeInstance.js";
 

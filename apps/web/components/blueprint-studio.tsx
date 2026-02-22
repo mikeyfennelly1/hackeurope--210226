@@ -57,6 +57,7 @@ import {
   Globe,
   Trash2,
   TrendingUp,
+  LayoutGrid,
   Timer,
   Zap,
 } from "lucide-react";
@@ -3246,8 +3247,25 @@ function BlueprintStudioInner() {
           })}
         </div>
 
-        {/* AI Chat */}
-        <div className="mt-auto border-t border-white/10 px-3 py-3">
+        {/* Fix Layout & AI Chat */}
+        <div className="mt-auto border-t border-white/10 px-3 py-3 flex flex-col gap-2">
+          <Button
+            className="w-full"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const laid = computeLayout(nodesRef.current, edgesRef.current);
+              setNodes(laid);
+              nodesRef.current = laid;
+              persistRef.current(laid, edgesRef.current);
+              requestAnimationFrame(() => {
+                fitView({ duration: 260, padding: 0.24 });
+              });
+            }}
+          >
+            <LayoutGrid className="size-4" />
+            Fix Layout
+          </Button>
           <Button
             className="w-full"
             size="sm"
