@@ -94,7 +94,7 @@ export type FlowNodeData = {
   label: string;
   inputs: string[];
   outputs: string[];
-  action?: { verb: Decision; market_id: string };
+  action?: { verb: Decision; token_id: string; amount: number };
   hasError?: boolean;
   inputType?: InputNodeType;
   cryptoMonitorConfig?: CryptoMonitorConfig;
@@ -118,7 +118,7 @@ type RedprintJSON = {
   name: string;
   status: string;
   nodes: RedprintNodeState[];
-  decision?: { verb: string; market_id: string } | null;
+  decision?: string | null;
   createdAt: string;
 };
 
@@ -127,7 +127,7 @@ type ApiRedprintResponse = {
   blueprintName: string;
   status: string;
   nodes: Record<string, { label?: string; role: string; status: string; output: unknown; firedAt: string | null; inputType?: string; lastPrice?: number }>;
-  decision: { verb: string; market_id: string } | null;
+  decision: string | null;
   createdAt: string;
 };
 
@@ -179,7 +179,6 @@ function createStarterBlueprint(name: string): Blueprint {
       position: { x: 400, y: 220 },
       inputs: ["topic.orders"],
       outputs: ["approved", "rejected"],
-      action: { verb: "buy", market_id: "" },
     })
     .addNode({
       id: "output-1",
@@ -595,6 +594,13 @@ function ToolbarField({
   );
 }
 
+type PolymarketMarket = {
+  question: string;
+  yesTokenId: string;
+  noTokenId: string;
+  volume24hr: number;
+};
+
 function FloatingNodeToolbar({
   node,
   errors,
@@ -608,6 +614,20 @@ function FloatingNodeToolbar({
 }) {
   const { flowToScreenPosition, getNode } = useReactFlow();
   const { zoom } = useViewport();
+  const [markets, setMarkets] = useState<PolymarketMarket[]>([]);
+  const [marketsLoading, setMarketsLoading] = useState(false);
+
+  // Fetch top markets for output nodes
+  useEffect(() => {
+    if (node.type === "outputNode" && markets.length === 0 && !marketsLoading) {
+      setMarketsLoading(true);
+      fetch("/api/polymarket?top=15")
+        .then((res) => res.json())
+        .then((data) => setMarkets(data))
+        .catch(() => setMarkets([]))
+        .finally(() => setMarketsLoading(false));
+    }
+  }, [node.type, markets.length, marketsLoading]);
 
   const internalNode = getNode(node.id);
   const nodeWidth = internalNode?.measured?.width ?? 200;
@@ -785,23 +805,88 @@ function FloatingNodeToolbar({
             </>
           )}
 
-          {/* Output node: inputs (consumes) */}
+          {/* Output node: inputs (consumes) + action */}
           {node.type === "outputNode" && (
-            <ToolbarField label="Consumes">
-              <Input
-                className="h-6 w-56 text-[11px]"
-                value={node.data.inputs.join(", ")}
-                onChange={(e) =>
-                  onUpdate({
-                    inputs: e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
-                placeholder="topic.orders"
-              />
-            </ToolbarField>
+            <>
+              <ToolbarField label="Consumes">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  value={node.data.inputs.join(", ")}
+                  onChange={(e) =>
+                    onUpdate({
+                      inputs: e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  placeholder="topic.orders"
+                />
+              </ToolbarField>
+              <div className="border-t border-white/[0.06] pt-2">
+                <span className="mb-1 block text-[8px] uppercase tracking-[0.25em] text-white/30">
+                  Order Action
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex gap-1.5">
+                    <select
+                      className="h-6 w-20 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                      value={node.data.action?.verb ?? "buy"}
+                      onChange={(e) =>
+                        onUpdate({
+                          action: {
+                            verb: e.target.value as Decision,
+                            token_id: node.data.action?.token_id ?? "",
+                            amount: node.data.action?.amount ?? 0,
+                          },
+                        })
+                      }
+                    >
+                      <option value="buy">Buy</option>
+                      <option value="sell">Sell</option>
+                    </select>
+                    <Input
+                      className="h-6 w-20 text-[11px]"
+                      type="number"
+                      min={0}
+                      value={node.data.action?.amount ?? 0}
+                      onChange={(e) =>
+                        onUpdate({
+                          action: {
+                            verb: node.data.action?.verb ?? "buy",
+                            token_id: node.data.action?.token_id ?? "",
+                            amount: Number(e.target.value) || 0,
+                          },
+                        })
+                      }
+                      placeholder="Amount"
+                    />
+                  </div>
+                  <select
+                    className="h-6 w-full border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                    value={node.data.action?.token_id ?? ""}
+                    onChange={(e) =>
+                      onUpdate({
+                        action: {
+                          verb: node.data.action?.verb ?? "buy",
+                          token_id: e.target.value,
+                          amount: node.data.action?.amount ?? 0,
+                        },
+                      })
+                    }
+                  >
+                    <option value="">
+                      {marketsLoading ? "Loading markets..." : "Select market"}
+                    </option>
+                    {markets.map((m) => (
+                      <option key={m.yesTokenId} value={m.yesTokenId}>
+                        {m.question.slice(0, 40)}{m.question.length > 40 ? "..." : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </>
           )}
 
           {/* Decision node: inputs, branches, action */}
@@ -837,41 +922,6 @@ function FloatingNodeToolbar({
                   placeholder="approved, rejected"
                 />
               </ToolbarField>
-              <div className="border-t border-white/[0.06] pt-2">
-                <span className="mb-1 block text-[8px] uppercase tracking-[0.25em] text-white/30">
-                  Action
-                </span>
-                <div className="flex gap-1.5">
-                  <select
-                    className="h-6 w-20 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
-                    value={node.data.action?.verb ?? "buy"}
-                    onChange={(e) =>
-                      onUpdate({
-                        action: {
-                          verb: e.target.value as Decision,
-                          market_id: node.data.action?.market_id ?? "",
-                        },
-                      })
-                    }
-                  >
-                    <option value="buy">Buy</option>
-                    <option value="sell">Sell</option>
-                  </select>
-                  <Input
-                    className="h-6 flex-1 text-[11px]"
-                    value={node.data.action?.market_id ?? ""}
-                    onChange={(e) =>
-                      onUpdate({
-                        action: {
-                          verb: node.data.action?.verb ?? "buy",
-                          market_id: e.target.value,
-                        },
-                      })
-                    }
-                    placeholder="Market ID"
-                  />
-                </div>
-              </div>
             </>
           )}
 
@@ -2278,9 +2328,8 @@ function BlueprintStudioInner() {
               <p className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-wider text-[#d4602c]">
                 Decision Result
               </p>
-              <p className="text-sm font-semibold text-white/90">
-                {activeRedprint.decision.verb} on{" "}
-                {activeRedprint.decision.market_id}
+              <p className="text-sm font-semibold text-white/90 capitalize">
+                {activeRedprint.decision}
               </p>
             </div>
           )}

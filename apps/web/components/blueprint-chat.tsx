@@ -80,7 +80,7 @@ function blueprintToContext(bp: Blueprint): string {
     if (n.inputType) parts.push(`inputType="${n.inputType}"`);
     if (n.inputs.length > 0) parts.push(`inputs=[${n.inputs.join(", ")}]`);
     if (n.outputs.length > 0) parts.push(`outputs=[${n.outputs.join(", ")}]`);
-    if (n.action) parts.push(`action={verb:"${n.action.verb}", market_id:"${n.action.market_id}"}`);
+    if (n.action) parts.push(`action={verb:"${n.action.verb}", token_id:"${n.action.token_id}", amount:${n.action.amount}}`);
     if (n.cryptoMonitorConfig) {
       const c = n.cryptoMonitorConfig;
       parts.push(`cryptoMonitorConfig={symbol:"${c.symbol}", condition:"${c.condition}", targetPrice:${c.targetPrice}}`);

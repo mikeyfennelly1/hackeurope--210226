@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { StringCodec, type Subscription } from "nats";
 import { toNatsSubject } from "@repo/backend/blueprints/definition";
-import type { BlueprintDefinition } from "@repo/backend/blueprints/definition";
+import type { BlueprintDefinition, SubscriptionRef } from "@repo/backend/blueprints/definition";
 import { topologicalSort } from "./graph.js";
 import { getConnection } from "./nats.js";
 import type { NatsNodePayload, NodeState, Redprint } from "./types.js";
@@ -13,6 +13,10 @@ import { getMarketParams } from "../utils/polymarket.js";
 
 const logger = getLogger("RedprintManager");
 const sc = StringCodec();
+
+function getNodeName(dep: string | SubscriptionRef): string {
+  return typeof dep === "string" ? dep : dep.node;
+}
 
 const store = new Map<string, Redprint>();
 
@@ -85,7 +89,8 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
     // Subscribe to each upstream subject
     for (const upstream of nodeDef.subscribesTo) {
       // Subject is scoped to this redprint instance: <redprint_id>.<node_name>
-      const subject = toNatsSubject(id, upstream);
+      const upstreamName = getNodeName(upstream);
+      const subject = toNatsSubject(id, upstreamName);
       logger.debug(`[${id.slice(0, 8)}] Subscribing "${nodeName}" to NATS subject "${subject}"`);
       const sub = nc.subscribe(subject);
       subscriptions.push(sub);
@@ -98,7 +103,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
           const output = JSON.parse(payload) as NatsNodePayload;
 
           // Update upstream node state
-          const upstreamState = redprint.nodes.get(upstream);
+          const upstreamState = redprint.nodes.get(upstreamName);
           if (upstreamState && upstreamState.status === "waiting") {
             upstreamState.status = "fired";
             upstreamState.output = output.output;
@@ -113,7 +118,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
 
           // Check if ALL upstream deps of this node have fired
           const allFired = nodeDef.subscribesTo!.every((dep) => {
-            const depState = redprint.nodes.get(dep);
+            const depState = redprint.nodes.get(getNodeName(dep));
             return depState?.status === "fired";
           });
 
@@ -134,19 +139,16 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
           logger.info(`[${id.slice(0, 8)}] Node "${nodeName}" fired`);
 
           if (nodeDef.role === "decision") {
-            // Terminal: record the decision and complete
-            redprint.decision = nodeDef.action?.verb ?? null;
-            redprint.status = "completed";
-            // Clean up all crypto monitors on natural completion
-            for (const monitor of redprint.monitors) {
-              monitor.close();
-            }
-            logger.info(
-              `[${id.slice(0, 8)}] Completed — decision: ${redprint.decision}`,
+            // Decision node: publish to downstream consumer nodes
+            logger.info(`[${id.slice(0, 8)}] Decision node fired`);
+            const nodeSubject = toNatsSubject(id, nodeName);
+            logger.debug(
+              `[${id.slice(0, 8)}] Publishing from decision "${nodeName}" to subject "${nodeSubject}"`,
             );
+            nc.publish(nodeSubject, sc.encode(JSON.stringify({ output: true })));
           } else if (nodeDef.comparisonConfig) {
             // Comparison node: evaluate operator on upstream values and/or thresholds
-            const deps = nodeDef.subscribesTo ?? [];
+            const deps = (nodeDef.subscribesTo ?? []).map(getNodeName);
             const config = nodeDef.comparisonConfig;
 
             let aVal: number;
@@ -181,17 +183,19 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
               `[${id.slice(0, 8)}] Comparison "${nodeName}": ${aVal} ${config.operator} ${bVal} = ${result}`,
             );
 
-            const nodeSubject = toNatsSubject(id, nodeName);
-            nc.publish(nodeSubject, sc.encode(JSON.stringify({ output: result })));
+            const compSubject = toNatsSubject(id, nodeName);
+            nc.publish(compSubject, sc.encode(JSON.stringify({ output: result })));
           } else if (nodeDef.role === "consumer" && nodeDef.action) {
             // Consumer (output) node: place order if all upstreams are true
             const allUpstreamsTrue = nodeDef.subscribesTo?.every((dep) => {
-              return redprint.nodes.get(dep)?.output === true;
+              return redprint.nodes.get(getNodeName(dep))?.output === true;
             });
 
             if (allUpstreamsTrue) {
               const { verb, token_id, amount } = nodeDef.action;
 
+              // Record the decision from the output node's action
+              redprint.decision = verb;
               logger.info(
                 `[${id.slice(0, 8)}] Placing ${verb} order for ${amount} on token ${token_id}`,
               );
@@ -214,9 +218,19 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
                   if (result) {
                     logger.info(`[${id.slice(0, 8)}] Order placed - orderId: ${result.orderId}`);
                   }
+                  // Complete the redprint after order placement
+                  redprint.status = "completed";
+                  for (const monitor of redprint.monitors) {
+                    monitor.close();
+                  }
+                  logger.info(`[${id.slice(0, 8)}] Redprint completed after order placement`);
                 })
                 .catch((error) => {
                   logger.error(`[${id.slice(0, 8)}] Order failed - ${error.message}`);
+                  redprint.status = "completed";
+                  for (const monitor of redprint.monitors) {
+                    monitor.close();
+                  }
                 });
             } else {
               logger.info(

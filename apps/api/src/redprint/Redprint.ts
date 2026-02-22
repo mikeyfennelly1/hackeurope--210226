@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Subscription } from "nats";
-import type { BlueprintDefinition, Decision } from "@repo/backend/blueprints/definition";
+import type { BlueprintDefinition, Decision, SubscriptionRef } from "@repo/backend/blueprints/definition";
 import type { NodeState, RedprintStatus } from "./types.js";
 import { DecisionBuffer } from "./DecisionBuffer.js";
 import { Decider } from "./Decider.js";
@@ -50,7 +50,12 @@ export class RedPrint {
     this.decisionBuffer = new DecisionBuffer(producerNodes.map((n) => n.name));
 
     const requiredState = new Map(
-      (decisionNode.subscribesTo ?? []).map((dep) => [dep.node, dep.requiredValue] as const),
+      (decisionNode.subscribesTo ?? []).map((dep) => {
+        if (typeof dep === "string") {
+          return [dep, true] as const;
+        }
+        return [dep.node, dep.requiredValue ?? true] as const;
+      }),
     );
     this.decider = new Decider(requiredState, decisionNode.action);
 

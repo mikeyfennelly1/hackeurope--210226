@@ -11,7 +11,7 @@ export class Decider {
     this.requiredState = requiredState;
     this.action = action;
     logger.debug(
-      `Initialized with ${requiredState.size} rule(s) for action "${action.verb}" on market ${action.market_id}`,
+      `Initialized with ${requiredState.size} rule(s) for action "${action.verb}" on token ${action.token_id}`,
     );
   }
 
@@ -34,6 +34,6 @@ export class Decider {
   }
 
   executeAction(): void {
-    logger.info(`Executing action: ${this.action.verb} on market ${this.action.market_id}`);
+    logger.info(`Executing action: ${this.action.verb} on token ${this.action.token_id}`);
   }
 }

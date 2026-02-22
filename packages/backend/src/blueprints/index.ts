@@ -1,14 +1,8 @@
-import type { Decision } from "./definition/types";
-export type { Decision } from "./definition/types";
+import type { CryptoMonitorConfig, Decision, InputNodeType, ComparisonOperator } from "./definition/types";
+export type { CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, ComparisonOperator } from "./definition/types";
 export { toDefinition } from "./convert";
 
 export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison";
-
-export type InputNodeType = "manual_trigger" | "crypto_monitor" | "crypto_price";
-
-export type CryptoConditionOperator = "drops_below" | "rises_above";
-
-export type ComparisonOperator = ">" | "<" | ">=" | "<=" | "==" | "!=";
 
 export type ComparisonConfig = {
   operator: ComparisonOperator;
@@ -17,12 +11,6 @@ export type ComparisonConfig = {
 };
 
 export type MarketOutcome = "yes" | "no";
-
-export type CryptoMonitorConfig = {
-  symbol: string;
-  condition: CryptoConditionOperator;
-  targetPrice: number;
-};
 
 export type BlueprintNode = {
   id: string;
