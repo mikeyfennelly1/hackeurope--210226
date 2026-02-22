@@ -7,7 +7,6 @@ import {
   addEdge,
   Background,
   ConnectionLineType,
-  Controls,
   type Connection,
   type EdgeChange,
   type Edge,
@@ -16,6 +15,7 @@ import {
   type Node,
   type NodeProps,
   type OnConnectEnd,
+  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -28,41 +28,72 @@ import {
   BlueprintUtils,
   toDefinition,
   type Blueprint,
+  type CryptoConditionOperator,
+  type CryptoMonitorConfig,
   type Decision,
+  type InputNodeType,
 } from "@repo/backend/blueprints";
 import {
   AlertCircle,
+  BarChart3,
   CheckCircle2,
-  ChevronRight,
+  ChevronDown,
+  Ellipsis,
   GitBranch,
   Loader2,
+  MessageCircle,
+  Pencil,
   Play,
   Plus,
   Square,
   Trash2,
+  TrendingUp,
   Zap,
 } from "lucide-react";
 
 import "@xyflow/react/dist/style.css";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { BlueprintChat, type BlueprintEditCallbacks } from "@/components/blueprint-chat";
+import type { AddNodeParams, UpdateNodeParams, AddEdgeParams } from "@/lib/blueprint-tools";
+import { MarketNode } from "@/components/market-node";
+import { computeLayout, GRID_SIZE } from "@/lib/auto-layout";
 
 const STORAGE_KEY = "blueprints:v1";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-type FlowNodeType = "inputNode" | "outputNode" | "decisionNode";
+type FlowNodeType = "inputNode" | "outputNode" | "decisionNode" | "marketNode";
 
-type FlowNodeData = {
+export type FlowNodeData = {
   label: string;
   inputs: string[];
   outputs: string[];
-  action?: {
-    verb: Decision;
-    token_id: string;
-    amount: number;
-  };
+  action?: { verb: Decision; market_id: string };
   hasError?: boolean;
+  inputType?: InputNodeType;
+  cryptoMonitorConfig?: CryptoMonitorConfig;
+  marketSlug?: string;
 };
 
 type RedprintNodeState = {
@@ -71,6 +102,8 @@ type RedprintNodeState = {
   role: string;
   status: string;
   firedAt?: string;
+  inputType?: string;
+  lastPrice?: number;
 };
 
 type RedprintJSON = {
@@ -78,7 +111,7 @@ type RedprintJSON = {
   name: string;
   status: string;
   nodes: RedprintNodeState[];
-  decision?: { verb: string; token_id: string } | null;
+  decision?: { verb: string; market_id: string } | null;
   createdAt: string;
 };
 
@@ -86,8 +119,8 @@ type ApiRedprintResponse = {
   id: string;
   blueprintName: string;
   status: string;
-  nodes: Record<string, { label?: string; role: string; status: string; output: unknown; firedAt: string | null }>;
-  decision: { verb: string; token_id: string } | null;
+  nodes: Record<string, { label?: string; role: string; status: string; output: unknown; firedAt: string | null; inputType?: string; lastPrice?: number }>;
+  decision: { verb: string; market_id: string } | null;
   createdAt: string;
 };
 
@@ -102,6 +135,8 @@ function apiResponseToRedprint(raw: ApiRedprintResponse): RedprintJSON {
       role: state.role,
       status: state.status,
       firedAt: state.firedAt ?? undefined,
+      inputType: state.inputType,
+      lastPrice: state.lastPrice,
     })),
     decision: raw.decision,
     createdAt: raw.createdAt,
@@ -137,7 +172,7 @@ function createStarterBlueprint(name: string): Blueprint {
       position: { x: 400, y: 220 },
       inputs: ["topic.orders"],
       outputs: ["approved", "rejected"],
-      action: { verb: "buy", token_id: "" },
+      action: { verb: "buy", market_id: "" },
     })
     .addNode({
       id: "output-1",
@@ -157,6 +192,7 @@ function toFlowNodeType(
 ): FlowNodeType {
   if (type === "input") return "inputNode";
   if (type === "output") return "outputNode";
+  if (type === "market") return "marketNode";
   return "decisionNode";
 }
 
@@ -165,6 +201,7 @@ function toBlueprintNodeType(
 ): Blueprint["nodes"][number]["type"] {
   if (type === "inputNode") return "input";
   if (type === "outputNode") return "output";
+  if (type === "marketNode") return "market";
   return "decision";
 }
 
@@ -172,28 +209,36 @@ function blueprintToFlow(blueprint: Blueprint): {
   nodes: Node<FlowNodeData, FlowNodeType>[];
   edges: Edge[];
 } {
-  return {
-    nodes: blueprint.nodes.map((node) => ({
-      id: node.id,
-      type: toFlowNodeType(node.type),
-      position: node.position,
-      data: {
-        label: node.label,
-        inputs: [...node.inputs],
-        outputs: [...node.outputs],
-        action: node.action,
-      },
-    })),
-    edges: blueprint.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle,
-      type: "smoothstep",
-      animated: false,
-    })),
-  };
+  const nodes: Node<FlowNodeData, FlowNodeType>[] = blueprint.nodes.map((node) => ({
+    id: node.id,
+    type: toFlowNodeType(node.type),
+    position: node.position,
+    data: {
+      label: node.label,
+      inputs: [...node.inputs],
+      outputs: [...node.outputs],
+      action: node.action,
+      inputType: node.inputType,
+      cryptoMonitorConfig: node.cryptoMonitorConfig,
+    },
+  }));
+
+  const edges: Edge[] = blueprint.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+    type: "smoothstep",
+    animated: false,
+  }));
+
+  // Auto-layout when all nodes sit at (0,0) — e.g. AI-generated blueprints
+  const needsLayout =
+    nodes.length > 1 &&
+    nodes.every((n) => n.position.x === 0 && n.position.y === 0);
+
+  return { nodes: needsLayout ? computeLayout(nodes, edges) : nodes, edges };
 }
 
 function flowToBlueprint(
@@ -211,6 +256,10 @@ function flowToBlueprint(
       inputs: [...node.data.inputs],
       outputs: [...node.data.outputs],
       ...(node.data.action ? { action: node.data.action } : {}),
+      ...(node.data.inputType ? { inputType: node.data.inputType } : {}),
+      ...(node.data.cryptoMonitorConfig
+        ? { cryptoMonitorConfig: node.data.cryptoMonitorConfig }
+        : {}),
     })),
     edges: edges.map((edge) => ({
       id: edge.id,
@@ -253,88 +302,174 @@ function BaseNode({
   icon,
   subtitle,
   hasError,
+  selected,
   children,
 }: {
   label: string;
   subtitle: string;
   icon: React.ReactNode;
   hasError?: boolean;
+  selected?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className={`min-w-[200px] border bg-[#161a19] p-3 shadow-[0_8px_24px_rgba(0,0,0,0.35)] ${hasError ? "border-[#c45c5c]" : "border-white/10"}`}>
-      <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[#8a918c]">{icon}</span>
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#5c635e]">
+    <div className="relative min-w-[220px] border border-white/20 bg-[#111314] font-[family-name:var(--font-geist-mono)] shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
+      {/* Corner brackets — orange, indicate selection */}
+      <div className={`absolute h-3 w-3 border-l border-t border-[#d4602c] transition-all ${selected ? "-left-1.5 -top-1.5" : "-left-px -top-px"}`} />
+      <div className={`absolute h-3 w-3 border-r border-t border-[#d4602c] transition-all ${selected ? "-right-1.5 -top-1.5" : "-right-px -top-px"}`} />
+      <div className={`absolute h-3 w-3 border-b border-l border-[#d4602c] transition-all ${selected ? "-bottom-1.5 -left-1.5" : "-bottom-px -left-px"}`} />
+      <div className={`absolute h-3 w-3 border-b border-r border-[#d4602c] transition-all ${selected ? "-bottom-1.5 -right-1.5" : "-bottom-px -right-px"}`} />
+
+      {/* Wavy error border — SVG displacement filter distorts a red outline */}
+      {hasError && (
+        <>
+          <svg className="absolute h-0 w-0 overflow-hidden" aria-hidden="true">
+            <defs>
+              <filter id="wavy-error">
+                <feTurbulence type="turbulence" baseFrequency="0.04 0.07" numOctaves="3" seed="2" result="turb">
+                  <animate attributeName="seed" values="2;10;2" dur="3s" repeatCount="indefinite" />
+                </feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="turb" scale="6" xChannelSelector="R" yChannelSelector="G" />
+              </filter>
+            </defs>
+          </svg>
+          <div
+            className="pointer-events-none absolute -inset-[3px] border-2 border-[#c45c5c]"
+            style={{ filter: "url(#wavy-error)" }}
+          />
+        </>
+      )}
+
+      {/* Noise overlay */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E")`,
+          backgroundSize: "128px 128px",
+        }}
+      />
+
+      <div className="relative">
+        {/* Header */}
+        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+          <span className="text-[#d4602c]">{icon}</span>
+          <p className="text-[9px] font-medium uppercase tracking-[0.25em] text-white/40">
             {subtitle}
           </p>
         </div>
+
+        {/* Label */}
+        <div className="border-b border-white/10 px-3 py-2.5">
+          <p className="text-[13px] font-bold leading-tight tracking-tight text-white/90">{label}</p>
+        </div>
+
+        {/* Content */}
+        <div className="px-3 py-2">
+          {children}
+        </div>
       </div>
-      <p className="mb-2 text-sm font-semibold text-[#e0e5e2]">{label}</p>
-      {children}
+
+      {/* Scanlines */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.04]"
+        style={{
+          backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.1) 2px, rgba(255,255,255,0.1) 3px)",
+        }}
+      />
     </div>
   );
 }
 
-function InputNode({ data }: NodeProps<Node<FlowNodeData, "inputNode">>) {
+function InputNode({ data, selected }: NodeProps<Node<FlowNodeData, "inputNode">>) {
+  const isCrypto = data.inputType === "crypto_monitor";
+
   return (
     <BaseNode
       label={data.label}
-      subtitle="Input"
-      icon={<Plus className="size-4" />}
+      subtitle={isCrypto ? "Crypto Monitor" : "Manual Trigger"}
+      icon={
+        isCrypto ? (
+          <TrendingUp className="size-3.5 text-[#e8a838]" />
+        ) : (
+          <Zap className="size-3.5" />
+        )
+      }
       hasError={data.hasError}
+      selected={selected}
     >
       <Handle type="source" position={Position.Right} />
-      <p className="text-[11px] text-[#8a918c]">
-        Publishes: {data.outputs.join(", ") || "none"}
-      </p>
-      <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[#5c635e]">
-        Source
-      </div>
+      {isCrypto && data.cryptoMonitorConfig ? (
+        <div className="space-y-0.5">
+          <p className="text-[11px] font-medium text-[#e8a838]">
+            {data.cryptoMonitorConfig.symbol}
+          </p>
+          {data.cryptoMonitorConfig.targetPrice > 0 && (
+            <p className="text-[11px] text-white/40">
+              {data.cryptoMonitorConfig.condition === "drops_below"
+                ? "Drops below"
+                : "Rises above"}{" "}
+              ${data.cryptoMonitorConfig.targetPrice.toLocaleString()}
+            </p>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
+            Publishes
+          </div>
+          <p className="mt-0.5 text-[10px] text-white/50">
+            {data.outputs.join(", ") || "none"}
+          </p>
+        </>
+      )}
     </BaseNode>
   );
 }
 
-function OutputNode({ data }: NodeProps<Node<FlowNodeData, "outputNode">>) {
+function OutputNode({ data, selected }: NodeProps<Node<FlowNodeData, "outputNode">>) {
   return (
     <BaseNode
       label={data.label}
       subtitle="Output"
-      icon={<CheckCircle2 className="size-4" />}
+      icon={<CheckCircle2 className="size-3.5" />}
       hasError={data.hasError}
+      selected={selected}
     >
       <Handle type="target" position={Position.Left} />
-      <p className="text-[11px] text-[#8a918c]">
-        Consumes: {data.inputs.join(", ") || "none"}
-      </p>
-      <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[#5c635e]">
-        Sink
+      <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
+        Consumes
       </div>
+      <p className="mt-0.5 text-[10px] text-white/50">
+        {data.inputs.join(", ") || "none"}
+      </p>
     </BaseNode>
   );
 }
 
-function DecisionNode({ data }: NodeProps<Node<FlowNodeData, "decisionNode">>) {
+function DecisionNode({ data, selected }: NodeProps<Node<FlowNodeData, "decisionNode">>) {
   return (
     <BaseNode
       label={data.label}
       subtitle="Decision"
-      icon={<GitBranch className="size-4" />}
+      icon={<GitBranch className="size-3.5" />}
       hasError={data.hasError}
+      selected={selected}
     >
       <Handle type="target" position={Position.Left} />
-      <p className="text-[11px] text-[#8a918c]">
-        Consumes: {data.inputs.join(", ") || "none"}
+      <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
+        Consumes
+      </div>
+      <p className="mt-0.5 text-[10px] text-white/50">
+        {data.inputs.join(", ") || "none"}
       </p>
-      <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[#5c635e]">
+      <div className="mt-2 text-[8px] uppercase tracking-[0.25em] text-white/30">
         Branches
       </div>
       <div className="mt-1 space-y-1">
         {data.outputs.map((branch) => (
           <div
             key={branch}
-            className="relative flex items-center rounded border border-white/10 px-2 py-1 text-[11px] text-[#c8ccc9]"
+            className="relative flex items-center border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.1em] text-white/60"
           >
             {branch}
             <Handle
@@ -355,6 +490,23 @@ function PhantomNode() {
     <div>
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+    </div>
+  );
+}
+
+function ToolbarField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="font-[family-name:var(--font-geist-mono)] text-[8px] uppercase tracking-[0.25em] text-white/30">
+        {label}
+      </span>
+      {children}
     </div>
   );
 }
@@ -381,6 +533,12 @@ function FloatingNodeToolbar({
   });
   const nodeErrors = errors.filter((e) => e.nodeId === node.id);
 
+  const nodeTypeLabel =
+    node.type === "inputNode" ? "INPUT"
+    : node.type === "outputNode" ? "OUTPUT"
+    : node.type === "decisionNode" ? "DECISION"
+    : "MARKET";
+
   return (
     <div
       className="fixed z-50 flex flex-col items-center"
@@ -397,104 +555,229 @@ function FloatingNodeToolbar({
           {nodeErrors.map((error) => (
             <div
               key={`${error.code}-${error.nodeId ?? ""}`}
-              className="rounded border border-[#8b4449]/60 bg-[#161a19] px-2 py-1 text-[10px] text-[#c45c5c]"
+              className="border border-[#c45c5c]/30 bg-[#111314] px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] text-[#c45c5c]"
             >
               {error.message}
             </div>
           ))}
         </div>
       )}
-      <div className="flex items-center gap-1.5 border border-white/10 bg-[#161a19] px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-        <Input
-          className="h-6 w-24 text-[11px]"
-          value={node.data.label}
-          onChange={(e) => onUpdate({ label: e.target.value })}
-          placeholder="Label"
-        />
-        <Input
-          className="h-6 w-28 text-[11px]"
-          value={node.data.inputs.join(", ")}
-          onChange={(e) =>
-            onUpdate({
-              inputs: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          placeholder="Inputs"
-        />
-        <Input
-          className="h-6 w-28 text-[11px]"
-          value={node.data.outputs.join(", ")}
-          onChange={(e) =>
-            onUpdate({
-              outputs: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          placeholder="Outputs"
-        />
-        <button
-          onClick={onDelete}
-          className="ml-0.5 text-[#8a918c] hover:text-[#c45c5c]"
-        >
-          <Trash2 className="size-3.5" />
-        </button>
-      </div>
-      {node.type === "outputNode" && (
-        <div className="mt-1 flex items-center gap-1.5 border border-white/10 bg-[#161a19] px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-          <select
-            className="h-6 rounded border border-white/10 bg-[#1a1f1d] px-1.5 text-[11px] text-[#c8ccc9]"
-            value={node.data.action?.verb ?? "buy"}
-            onChange={(e) =>
-              onUpdate({
-                action: {
-                  verb: e.target.value as Decision,
-                  token_id: node.data.action?.token_id ?? "",
-                  amount: node.data.action?.amount ?? 0,
-                },
-              })
-            }
+      <div className="border border-white/10 bg-[#111314] font-[family-name:var(--font-geist-mono)] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
+          <span className="text-[9px] uppercase tracking-[0.2em] text-[#d4602c]">
+            {nodeTypeLabel}
+          </span>
+          <button
+            onClick={onDelete}
+            className="text-white/30 transition-colors hover:text-[#c45c5c]"
           >
-            <option value="buy">Buy</option>
-            <option value="sell">Sell</option>
-          </select>
-          <Input
-            className="h-6 w-36 text-[11px]"
-            value={node.data.action?.token_id ?? ""}
-            onChange={(e) =>
-              onUpdate({
-                action: {
-                  verb: node.data.action?.verb ?? "buy",
-                  token_id: e.target.value,
-                  amount: node.data.action?.amount ?? 0,
-                },
-              })
-            }
-            placeholder="Token ID"
-          />
-          <Input
-            className="h-6 w-20 text-[11px]"
-            type="number"
-            min="0"
-            step="0.01"
-            value={node.data.action?.amount ?? ""}
-            onChange={(e) =>
-              onUpdate({
-                action: {
-                  verb: node.data.action?.verb ?? "buy",
-                  token_id: node.data.action?.token_id ?? "",
-                  amount: parseFloat(e.target.value) || 0,
-                },
-              })
-            }
-            placeholder="Amount"
-          />
+            <Trash2 className="size-3" />
+          </button>
         </div>
-      )}
+
+        {/* Fields */}
+        <div className="flex flex-col gap-2 px-3 py-2">
+          {/* Label — all nodes */}
+          <ToolbarField label="Label">
+            <Input
+              className="h-6 w-56 text-[11px]"
+              value={node.data.label}
+              onChange={(e) => onUpdate({ label: e.target.value })}
+              placeholder="Node label"
+            />
+          </ToolbarField>
+
+          {/* Input node: outputs (publishes) */}
+          {node.type === "inputNode" && (
+            <ToolbarField label="Publishes">
+              <Input
+                className="h-6 w-56 text-[11px]"
+                value={node.data.outputs.join(", ")}
+                onChange={(e) =>
+                  onUpdate({
+                    outputs: e.target.value
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="topic.orders, topic.events"
+              />
+            </ToolbarField>
+          )}
+
+          {/* Input node: crypto monitor fields */}
+          {node.type === "inputNode" && node.data.inputType === "crypto_monitor" && (
+            <>
+              <ToolbarField label="Symbol">
+                <select
+                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                  value={node.data.cryptoMonitorConfig?.symbol ?? "BTCUSDT"}
+                  onChange={(e) =>
+                    onUpdate({
+                      cryptoMonitorConfig: {
+                        ...(node.data.cryptoMonitorConfig ?? {
+                          condition: "drops_below" as CryptoConditionOperator,
+                          targetPrice: 0,
+                        }),
+                        symbol: e.target.value,
+                      },
+                    })
+                  }
+                >
+                  <option value="BTCUSDT">BTC / USDT</option>
+                  <option value="ETHUSDT">ETH / USDT</option>
+                  <option value="SOLUSDT">SOL / USDT</option>
+                  <option value="DOGEUSDT">DOGE / USDT</option>
+                  <option value="XRPUSDT">XRP / USDT</option>
+                </select>
+              </ToolbarField>
+              <ToolbarField label="Condition">
+                <select
+                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                  value={node.data.cryptoMonitorConfig?.condition ?? "drops_below"}
+                  onChange={(e) =>
+                    onUpdate({
+                      cryptoMonitorConfig: {
+                        ...(node.data.cryptoMonitorConfig ?? {
+                          symbol: "BTCUSDT",
+                          targetPrice: 0,
+                        }),
+                        condition: e.target.value as CryptoConditionOperator,
+                      },
+                    })
+                  }
+                >
+                  <option value="drops_below">Drops below</option>
+                  <option value="rises_above">Rises above</option>
+                </select>
+              </ToolbarField>
+              <ToolbarField label="Target Price">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  type="number"
+                  value={node.data.cryptoMonitorConfig?.targetPrice ?? ""}
+                  onChange={(e) =>
+                    onUpdate({
+                      cryptoMonitorConfig: {
+                        ...(node.data.cryptoMonitorConfig ?? {
+                          symbol: "BTCUSDT",
+                          condition: "drops_below" as CryptoConditionOperator,
+                        }),
+                        targetPrice: parseFloat(e.target.value) || 0,
+                      },
+                    })
+                  }
+                  placeholder="Target $"
+                />
+              </ToolbarField>
+            </>
+          )}
+
+          {/* Output node: inputs (consumes) */}
+          {node.type === "outputNode" && (
+            <ToolbarField label="Consumes">
+              <Input
+                className="h-6 w-56 text-[11px]"
+                value={node.data.inputs.join(", ")}
+                onChange={(e) =>
+                  onUpdate({
+                    inputs: e.target.value
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="topic.orders"
+              />
+            </ToolbarField>
+          )}
+
+          {/* Decision node: inputs, branches, action */}
+          {node.type === "decisionNode" && (
+            <>
+              <ToolbarField label="Consumes">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  value={node.data.inputs.join(", ")}
+                  onChange={(e) =>
+                    onUpdate({
+                      inputs: e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  placeholder="topic.orders"
+                />
+              </ToolbarField>
+              <ToolbarField label="Branches">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  value={node.data.outputs.join(", ")}
+                  onChange={(e) =>
+                    onUpdate({
+                      outputs: e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  placeholder="approved, rejected"
+                />
+              </ToolbarField>
+              <div className="border-t border-white/[0.06] pt-2">
+                <span className="mb-1 block text-[8px] uppercase tracking-[0.25em] text-white/30">
+                  Action
+                </span>
+                <div className="flex gap-1.5">
+                  <select
+                    className="h-6 w-20 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                    value={node.data.action?.verb ?? "buy"}
+                    onChange={(e) =>
+                      onUpdate({
+                        action: {
+                          verb: e.target.value as Decision,
+                          market_id: node.data.action?.market_id ?? "",
+                        },
+                      })
+                    }
+                  >
+                    <option value="buy">Buy</option>
+                    <option value="sell">Sell</option>
+                  </select>
+                  <Input
+                    className="h-6 flex-1 text-[11px]"
+                    value={node.data.action?.market_id ?? ""}
+                    onChange={(e) =>
+                      onUpdate({
+                        action: {
+                          verb: node.data.action?.verb ?? "buy",
+                          market_id: e.target.value,
+                        },
+                      })
+                    }
+                    placeholder="Market ID"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Market node: slug */}
+          {node.type === "marketNode" && (
+            <ToolbarField label="Event Slug">
+              <Input
+                className="h-6 w-56 text-[11px]"
+                value={node.data.marketSlug ?? ""}
+                onChange={(e) => onUpdate({ marketSlug: e.target.value })}
+                placeholder="e.g. kraken-ipo-in-2025"
+              />
+            </ToolbarField>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -505,17 +788,33 @@ type ConnectionInfo = {
   fromHandleType: "source" | "target";
 };
 
-const ALL_NODE_OPTIONS: { type: FlowNodeType; label: string; icon: React.ReactNode; hasTarget: boolean; hasSource: boolean }[] = [
-  { type: "inputNode", label: "Input", icon: <Plus className="size-3 text-[#8a918c]" />, hasTarget: false, hasSource: true },
-  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#8a918c]" />, hasTarget: true, hasSource: true },
-  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#8a918c]" />, hasTarget: true, hasSource: false },
+type NodeOption = {
+  type: FlowNodeType;
+  inputSubType?: InputNodeType;
+  label: string;
+  icon: React.ReactNode;
+  hasTarget: boolean;
+  hasSource: boolean;
+};
+
+const ALL_NODE_OPTIONS: NodeOption[] = [
+  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
+  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
+  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
+  { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
 ];
 
-const ITEM_CLASS =
-  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-[#c8ccc9] hover:bg-white/5 transition-colors";
+const DROPDOWN_CONTENT_CLASS =
+  "border-white/10 bg-[#111314] shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
 
-const MENU_CLASS =
-  "fixed z-50 min-w-[140px] border border-white/10 bg-[#161a19] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
+const DROPDOWN_ITEM_CLASS =
+  "text-white/80 focus:bg-white/5 focus:text-white/80 data-[highlighted]:bg-white/5 data-[highlighted]:text-white/80";
+
+const DROPDOWN_SUBTRIGGER_CLASS =
+  "text-white/80 focus:bg-white/5 focus:text-white/80 data-[state=open]:bg-white/5 data-[state=open]:text-white/80 data-[highlighted]:bg-white/5 data-[highlighted]:text-white/80";
+
+const DROPDOWN_ITEM_DESTRUCTIVE_CLASS =
+  "text-[#c45c5c] focus:bg-[#c45c5c]/10 focus:text-[#c45c5c] data-[highlighted]:bg-[#c45c5c]/10 data-[highlighted]:text-[#c45c5c]";
 
 function ConnectionNodePicker({
   menu,
@@ -527,6 +826,7 @@ function ConnectionNodePicker({
     type: FlowNodeType,
     position: { x: number; y: number },
     connectFrom: ConnectionInfo,
+    inputSubType?: InputNodeType,
   ) => void;
   onClose: () => void;
 }) {
@@ -546,29 +846,35 @@ function ConnectionNodePicker({
   );
 
   return (
-    <div onMouseDown={(e) => e.stopPropagation()}>
-      <div
-        className={MENU_CLASS}
-        style={{ left: screenPos.x, top: screenPos.y }}
+    <DropdownMenu open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
+      <DropdownMenuTrigger asChild>
+        <div
+          className="fixed size-0"
+          style={{ left: screenPos.x, top: screenPos.y }}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        sideOffset={0}
+        className={`min-w-[120px] ${DROPDOWN_CONTENT_CLASS}`}
+        onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
       >
-        <div className="px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[#5c635e]">
-          Add Node
-        </div>
         {options.map((opt) => (
-          <button
-            key={opt.type}
-            className={ITEM_CLASS}
+          <DropdownMenuItem
+            key={`${opt.type}-${opt.inputSubType ?? ""}`}
+            className={DROPDOWN_ITEM_CLASS}
             onClick={() => {
-              onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom);
+              onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, connectFrom, opt.inputSubType);
               onClose();
             }}
           >
             {opt.icon}
             {opt.label}
-          </button>
+          </DropdownMenuItem>
         ))}
-      </div>
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -582,66 +888,103 @@ function CanvasContextMenu({
   onAddNode: (
     type: FlowNodeType,
     position: { x: number; y: number },
+    connectFrom?: ConnectionInfo,
+    inputSubType?: InputNodeType,
   ) => void;
   onDeleteNode: (nodeId: string) => void;
   onClose: () => void;
 }) {
-  const [showAddSub, setShowAddSub] = useState(false);
-
-  const nodeItems = (position: { x: number; y: number }) =>
-    ALL_NODE_OPTIONS.map((opt) => (
-      <button
-        key={opt.type}
-        className={ITEM_CLASS}
-        onClick={() => {
-          onAddNode(opt.type, position);
-          onClose();
-        }}
-      >
-        {opt.icon}
-        {opt.label}
-      </button>
-    ));
-
   return (
-    <div onMouseDown={(e) => e.stopPropagation()}>
-      <div
-        className={MENU_CLASS}
-        style={{ left: menu.screenX, top: menu.screenY }}
+    <DropdownMenu open onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
+      <DropdownMenuTrigger asChild>
+        <div
+          className="fixed size-0"
+          style={{ left: menu.screenX, top: menu.screenY }}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        sideOffset={0}
+        className={`min-w-[140px] ${DROPDOWN_CONTENT_CLASS}`}
+        onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
       >
         {menu.type === "pane" ? (
-          <div
-            className="relative"
-            onMouseEnter={() => setShowAddSub(true)}
-            onMouseLeave={() => setShowAddSub(false)}
-          >
-            <button className={ITEM_CLASS}>
-              <Plus className="size-3 text-[#8a918c]" />
-              <span className="flex-1">Add node</span>
-              <ChevronRight className="size-3 text-[#5c635e]" />
-            </button>
-            {showAddSub && (
-              <div
-                className={MENU_CLASS}
-                style={{ position: "absolute", left: "100%", top: -5 }}
+          <>
+            {ALL_NODE_OPTIONS.map((opt) => (
+              <DropdownMenuItem
+                key={`${opt.type}-${opt.inputSubType ?? ""}`}
+                className={DROPDOWN_ITEM_CLASS}
+                onClick={() => {
+                  onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
+                  onClose();
+                }}
               >
-                {nodeItems({ x: menu.flowX, y: menu.flowY })}
-              </div>
-            )}
-          </div>
+                {opt.icon}
+                {opt.label}
+              </DropdownMenuItem>
+            ))}
+          </>
         ) : (
-          <button
-            className={ITEM_CLASS}
+          <DropdownMenuItem
+            className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
             onClick={() => {
               onDeleteNode(menu.nodeId);
               onClose();
             }}
           >
-            <Trash2 className="size-3 text-[#8a918c]" />
+            <Trash2 className="size-3" />
             Delete node
-          </button>
+          </DropdownMenuItem>
         )}
-      </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function InputNodeDropdown({
+  onSelect,
+}: {
+  onSelect: (subType: InputNodeType) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as globalThis.Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <Button
+        variant="secondary"
+        className="w-full"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <Plus className="size-4" />
+        Add Input
+      </Button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-full border border-white/10 bg-[#111314] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+          <button
+            className={DROPDOWN_ITEM_CLASS}
+            onClick={() => {
+              onSelect("crypto_monitor");
+              setOpen(false);
+            }}
+          >
+            <TrendingUp className="size-3 text-[#e8a838]" />
+            Crypto Monitor
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -659,10 +1002,14 @@ function BlueprintStudioInner() {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [activeRedprint, setActiveRedprint] = useState<RedprintJSON | null>(null);
   const [dispatching, setDispatching] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [deletingBlueprintId, setDeletingBlueprintId] = useState<string | null>(null);
+  const [renamingBlueprintId, setRenamingBlueprintId] = useState<string | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
   const skipNextPaneClickRef = useRef(false);
+  const isDraggingNodeRef = useRef(false);
 
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -743,9 +1090,13 @@ function BlueprintStudioInner() {
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<FlowNodeData, FlowNodeType>>[]) => {
       // Ignore changes to the phantom node
-      const filtered = changes.filter(
+      let filtered = changes.filter(
         (c) => !("id" in c && c.id === PHANTOM_NODE_ID),
       );
+      // Suppress selection changes while dragging (prevents re-select after drop)
+      if (isDraggingNodeRef.current) {
+        filtered = filtered.filter((c) => c.type !== "select");
+      }
       if (filtered.length === 0) return;
       const next = applyNodeChanges(filtered, nodesRef.current);
       setNodes(next);
@@ -842,6 +1193,7 @@ function BlueprintStudioInner() {
     type: FlowNodeType,
     atPosition?: { x: number; y: number },
     connectFrom?: ConnectionInfo,
+    inputSubType?: InputNodeType,
   ) => {
     let position: { x: number; y: number };
 
@@ -864,25 +1216,42 @@ function BlueprintStudioInner() {
         : { x: center.x, y: center.y };
     }
 
+    const isCrypto = type === "inputNode" && inputSubType === "crypto_monitor";
     const id = `${type}-${Date.now()}`;
     const node: Node<FlowNodeData, FlowNodeType> = {
       id,
       type,
       position,
       data: {
-        label:
-          type === "decisionNode"
+        label: isCrypto
+          ? "BTC Price Monitor"
+          : type === "decisionNode"
             ? "New Decision"
             : type === "inputNode"
               ? "New Input"
-              : "New Output",
-        inputs: type === "inputNode" ? [] : ["topic.orders"],
+              : type === "marketNode"
+                ? "Market"
+                : "New Output",
+        inputs: type === "inputNode" || type === "marketNode" ? [] : ["topic.orders"],
         outputs:
           type === "decisionNode"
             ? ["branch-a", "branch-b"]
-            : type === "outputNode"
+            : type === "outputNode" || type === "marketNode"
               ? []
               : ["topic.orders"],
+        ...(type === "inputNode"
+          ? { inputType: inputSubType ?? "manual_trigger" }
+          : {}),
+        ...(isCrypto
+          ? {
+              cryptoMonitorConfig: {
+                symbol: "BTCUSDT",
+                condition: "drops_below" as CryptoConditionOperator,
+                targetPrice: 0,
+              },
+            }
+          : {}),
+        ...(type === "marketNode" ? { marketSlug: "" } : {}),
       },
     };
 
@@ -917,9 +1286,6 @@ function BlueprintStudioInner() {
     }
 
     persistCurrent(nextNodes, nextEdges);
-    requestAnimationFrame(() => {
-      fitView({ duration: 260, padding: 0.24 });
-    });
   };
 
   const onConnect = useCallback(
@@ -1024,28 +1390,171 @@ function BlueprintStudioInner() {
     saveBlueprints(next);
   };
 
-  const deleteBlueprint = (id: string) => {
-    if (blueprints.length === 1) return;
-    const next = blueprints.filter((blueprint) => blueprint.id !== id);
+  const handleBlueprintFromChat = useCallback(
+    (blueprint: Blueprint) => {
+      const next = [...blueprints, blueprint];
+      setBlueprints(next);
+      setSelectedBlueprintId(blueprint.id);
+      saveBlueprints(next);
+      requestAnimationFrame(() => {
+        fitView({ duration: 260, padding: 0.24 });
+      });
+    },
+    [blueprints, fitView],
+  );
+
+  const handleChatAddNode = useCallback(
+    (params: AddNodeParams) => {
+      const nodeType: FlowNodeType =
+        params.type === "input"
+          ? "inputNode"
+          : params.type === "decision"
+            ? "decisionNode"
+            : "outputNode";
+
+      const isCrypto =
+        params.type === "input" && "inputType" in params && params.inputType === "crypto_monitor";
+
+      const node: Node<FlowNodeData, FlowNodeType> = {
+        id: params.id,
+        type: nodeType,
+        position: { x: 0, y: 0 }, // will be auto-laid out
+        data: {
+          label: params.label,
+          inputs: "inputs" in params ? params.inputs : [],
+          outputs: "outputs" in params ? params.outputs : [],
+          ...("action" in params && params.action ? { action: params.action } : {}),
+          ...("inputType" in params && params.inputType
+            ? { inputType: params.inputType }
+            : {}),
+          ...(isCrypto && "cryptoMonitorConfig" in params && params.cryptoMonitorConfig
+            ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
+            : {}),
+        },
+      };
+
+      const nextNodes = [...nodesRef.current, node];
+      // Auto-layout all nodes when a new one is added at (0,0)
+      const laid = computeLayout(nextNodes, edgesRef.current);
+      setNodes(laid);
+      nodesRef.current = laid;
+      persistRef.current(laid, edgesRef.current);
+      requestAnimationFrame(() => {
+        fitView({ duration: 260, padding: 0.24 });
+      });
+    },
+    [fitView],
+  );
+
+  const handleChatUpdateNode = useCallback((params: UpdateNodeParams) => {
+    const nextNodes = nodesRef.current.map((node) => {
+      if (node.id !== params.id) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          ...(params.label !== undefined ? { label: params.label } : {}),
+          ...(params.inputs !== undefined ? { inputs: params.inputs } : {}),
+          ...(params.outputs !== undefined ? { outputs: params.outputs } : {}),
+          ...(params.action !== undefined ? { action: params.action } : {}),
+          ...(params.inputType !== undefined ? { inputType: params.inputType } : {}),
+          ...(params.cryptoMonitorConfig !== undefined
+            ? { cryptoMonitorConfig: params.cryptoMonitorConfig }
+            : {}),
+        },
+      };
+    });
+    setNodes(nextNodes);
+    nodesRef.current = nextNodes;
+    updateNodeInternals(params.id);
+    persistRef.current(nextNodes, edgesRef.current);
+  }, [updateNodeInternals]);
+
+  const handleChatDeleteNode = useCallback((id: string) => {
+    const nextNodes = nodesRef.current.filter((n) => n.id !== id);
+    const nextEdges = edgesRef.current.filter(
+      (e) => e.source !== id && e.target !== id,
+    );
+    if (selectedNodeId === id) setSelectedNodeId(null);
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    persistRef.current(nextNodes, nextEdges);
+  }, [selectedNodeId]);
+
+  const handleChatAddEdge = useCallback((params: AddEdgeParams) => {
+    const edge: Edge = {
+      id: `edge-${params.source}-${params.target}-${Date.now()}`,
+      source: params.source,
+      target: params.target,
+      ...(params.sourceHandle ? { sourceHandle: params.sourceHandle } : {}),
+      type: "smoothstep",
+    };
+    const nextEdges = addEdge(edge, edgesRef.current);
+    setEdges(nextEdges);
+    edgesRef.current = nextEdges;
+    persistRef.current(nodesRef.current, nextEdges);
+  }, []);
+
+  const handleChatDeleteEdge = useCallback(
+    (source: string, target: string, sourceHandle?: string) => {
+      const nextEdges = edgesRef.current.filter((e) => {
+        if (e.source !== source || e.target !== target) return true;
+        if (sourceHandle && e.sourceHandle !== sourceHandle) return true;
+        return false;
+      });
+      setEdges(nextEdges);
+      edgesRef.current = nextEdges;
+      persistRef.current(nodesRef.current, nextEdges);
+    },
+    [],
+  );
+
+  const renameBlueprint = useCallback(
+    (name: string) => {
+      if (!selectedBlueprint) return;
+      const next = blueprints.map((blueprint) =>
+        blueprint.id === selectedBlueprint.id
+          ? { ...blueprint, name }
+          : blueprint,
+      );
+      setBlueprints(next);
+      saveBlueprints(next);
+    },
+    [selectedBlueprint, blueprints],
+  );
+
+  const chatCallbacks = useMemo<BlueprintEditCallbacks>(
+    () => ({
+      onBlueprintGenerated: handleBlueprintFromChat,
+      onAddNode: handleChatAddNode,
+      onUpdateNode: handleChatUpdateNode,
+      onDeleteNode: handleChatDeleteNode,
+      onAddEdge: handleChatAddEdge,
+      onDeleteEdge: handleChatDeleteEdge,
+      onRenameBlueprint: renameBlueprint,
+    }),
+    [
+      handleBlueprintFromChat,
+      handleChatAddNode,
+      handleChatUpdateNode,
+      handleChatDeleteNode,
+      handleChatAddEdge,
+      handleChatDeleteEdge,
+      renameBlueprint,
+    ],
+  );
+
+  const confirmDeleteBlueprint = () => {
+    if (!deletingBlueprintId) return;
+    const next = blueprints.filter((blueprint) => blueprint.id !== deletingBlueprintId);
     setBlueprints(next);
-    if (selectedBlueprintId === id) {
+    if (selectedBlueprintId === deletingBlueprintId) {
       setSelectedBlueprintId(next[0]?.id ?? "");
     }
     saveBlueprints(next);
-  };
-
-  const renameBlueprint = (name: string) => {
-    if (!selectedBlueprint) return;
-    const next = blueprints.map((blueprint) =>
-      blueprint.id === selectedBlueprint.id
-        ? {
-            ...blueprint,
-            name,
-          }
-        : blueprint,
-    );
-    setBlueprints(next);
-    saveBlueprints(next);
+    setDeletingBlueprintId(null);
   };
 
   const nodeTypes = useMemo(
@@ -1053,6 +1562,7 @@ function BlueprintStudioInner() {
       inputNode: InputNode,
       outputNode: OutputNode,
       decisionNode: DecisionNode,
+      marketNode: MarketNode,
       phantom: PhantomNode,
     }),
     [],
@@ -1094,103 +1604,100 @@ function BlueprintStudioInner() {
   }, [contextMenu]);
 
   return (
-    <div className="relative flex min-h-screen bg-[#0d0f0f] text-[#c8ccc9]">
-      <div className="ambient-glow" />
-      <aside className="relative z-10 w-[300px] border-r border-white/10 bg-[#0d0f0f]/95 p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-[#5c635e]">
-              Blueprints
-            </p>
-            <h1 className="text-lg font-semibold text-[#e0e5e2]">
-              Blueprint Studio
-            </h1>
-          </div>
-          <Button size="sm" variant="outline" onClick={createBlueprint}>
-            <Plus className="size-4" />
-            Add
+    <div className="relative flex min-h-screen bg-[#0a0a0a] text-[#e0e0e0]">
+      <aside className="relative z-10 flex w-[260px] flex-col border-r border-white/10 bg-[#0a0a0a]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 pb-2 pt-4">
+          <h1 className="font-[family-name:var(--font-geist-mono)] text-xs font-semibold uppercase tracking-[0.2em] text-white/80">
+            <span className="text-[#d4602c]">//</span> Blueprint Studio
+          </h1>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0 text-[#d4602c]/60 hover:text-[#d4602c]"
+            disabled={!selectedBlueprint || status !== "saved" || dispatching}
+            onClick={dispatchBlueprint}
+          >
+            {dispatching ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Play className="size-4" />
+            )}
           </Button>
         </div>
 
-        <div className="space-y-2">
+        {/* New blueprint button */}
+        <button
+          onClick={createBlueprint}
+          className="mx-3 mb-1 flex items-center gap-2 px-2 py-2 font-[family-name:var(--font-geist-mono)] text-[11px] uppercase tracking-[0.15em] text-white/30 transition-colors hover:bg-white/5 hover:text-white/60"
+        >
+          <Plus className="size-4 text-[#d4602c]/60" />
+          New blueprint
+        </button>
+
+        {/* Blueprint list */}
+        <div className="flex-1 overflow-y-auto px-2 py-1">
           {blueprints.map((blueprint) => {
             const selected = blueprint.id === selectedBlueprintId;
             return (
-              <button
+              <div
                 key={blueprint.id}
-                onClick={() => setSelectedBlueprintId(blueprint.id)}
-                className={`flex w-full items-center justify-between border px-3 py-2 text-left text-sm transition ${
+                onClick={() => {
+                  setSelectedBlueprintId(blueprint.id);
+                }}
+                className={`group relative flex cursor-pointer items-center px-2 py-2 text-sm transition-colors ${
                   selected
-                    ? "border-[#5a7a6a] bg-[#1a1f1d] text-[#e0e5e2]"
-                    : "border-white/10 bg-[#161a19] text-[#8a918c] hover:border-white/20"
+                    ? "border-l-2 border-[#d4602c] bg-white/[0.06] pl-[6px] text-white/90"
+                    : "text-white/40 hover:bg-white/[0.03] hover:text-white/60"
                 }`}
               >
-                <span>{blueprint.name}</span>
-                <span
-                  className="text-[#5c635e] hover:text-[#c45c5c]"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    deleteBlueprint(blueprint.id);
-                  }}
-                >
-                  <Trash2 className="size-4" />
-                </span>
-              </button>
+                <span className="flex-1 truncate">{blueprint.name}</span>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        onClick={(e) => e.stopPropagation()}
+                        className={`ml-1 shrink-0 p-0.5 text-white/30 opacity-0 transition-opacity hover:text-white/80 group-hover:opacity-100 ${selected ? "opacity-100" : ""}`}
+                      >
+                        <Ellipsis className="size-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className={`w-40 ${DROPDOWN_CONTENT_CLASS}`}>
+                      <DropdownMenuItem
+                        className={DROPDOWN_ITEM_CLASS}
+                        onClick={() => {
+                          setSelectedBlueprintId(blueprint.id);
+                          setRenamingBlueprintId(blueprint.id);
+                        }}
+                      >
+                        <Pencil className="size-3 text-[#d4602c]" />
+                        Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-white/10" />
+                      <DropdownMenuItem
+                        className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
+                        onClick={() => setDeletingBlueprintId(blueprint.id)}
+                      >
+                        <Trash2 className="size-3" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             );
           })}
         </div>
 
-        {selectedBlueprint ? (
-          <div className="mt-4 border-t border-white/10 pt-4">
-            <p className="mb-1 text-xs uppercase tracking-[0.18em] text-[#5c635e]">
-              Selected Blueprint
-            </p>
-            <Input
-              value={selectedBlueprint.name}
-              onChange={(event) => renameBlueprint(event.target.value)}
-            />
-            <div className="mt-3 flex items-center gap-2 text-xs">
-              {status === "saved" ? (
-                <>
-                  <CheckCircle2 className="size-4 text-[#5a7a6a]" />
-                  <span className="text-[#8a918c]">Validated and saved</span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="size-4 text-[#c45c5c]" />
-                  <span className="text-[#c45c5c]">
-                    Invalid changes (not persisted)
-                  </span>
-                </>
-              )}
-            </div>
-            <Button
-              className="mt-3 w-full"
-              variant="default"
-              disabled={status !== "saved" || dispatching}
-              onClick={dispatchBlueprint}
-            >
-              {dispatching ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Play className="size-4" />
-              )}
-              {dispatching ? "Dispatching..." : "Dispatch"}
-            </Button>
-          </div>
-        ) : null}
-
-        <div className="mt-6 border-t border-white/10 pt-4">
-          <p className="mb-2 text-xs uppercase tracking-[0.18em] text-[#5c635e]">
+        {/* Node Palette */}
+        <div className="border-t border-white/10 px-3 py-3">
+          <p className="mb-2 text-xs uppercase tracking-[0.18em] text-white/30">
             Node Palette
           </p>
           <div className="grid grid-cols-1 gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("inputNode")}
-            >
-              Add Input
-            </Button>
+            <InputNodeDropdown
+              onSelect={(subType) =>
+                addNodeByType("inputNode", undefined, undefined, subType)
+              }
+            />
             <Button
               variant="secondary"
               onClick={() => addNodeByType("outputNode")}
@@ -1209,7 +1716,32 @@ function BlueprintStudioInner() {
             >
               Recenter Graph
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const laid = computeLayout(nodes, edges);
+                setNodes(laid);
+                requestAnimationFrame(() => {
+                  fitView({ duration: 260, padding: 0.24 });
+                });
+              }}
+            >
+              Auto Layout
+            </Button>
           </div>
+        </div>
+
+        {/* AI Chat */}
+        <div className="mt-auto border-t border-white/10 px-3 py-3">
+          <Button
+            className="w-full"
+            size="sm"
+            variant={chatOpen ? "default" : "outline"}
+            onClick={() => setChatOpen((prev) => !prev)}
+          >
+            <MessageCircle className="size-4" />
+            {chatOpen ? "Close AI Chat" : "AI Chat"}
+          </Button>
         </div>
 
       </aside>
@@ -1228,7 +1760,23 @@ function BlueprintStudioInner() {
             onConnectEnd={onConnectEnd}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onNodeDragStart={() => {
+              isDraggingNodeRef.current = true;
+            }}
+            onNodeDragStop={(_event, node) => {
+              setTimeout(() => {
+                setSelectedNodeId(null);
+                // Clear React Flow's internal selected state on the dragged node
+                setNodes((nds) =>
+                  nds.map((n) =>
+                    n.id === node.id ? { ...n, selected: false } : n,
+                  ),
+                );
+                isDraggingNodeRef.current = false;
+              }, 50);
+            }}
             onNodeClick={(_event, node) => {
+              if (isDraggingNodeRef.current) return;
               setSelectedNodeId(node.id);
               setContextMenu(null);
             }}
@@ -1239,6 +1787,19 @@ function BlueprintStudioInner() {
               }
               setSelectedNodeId(null);
               setContextMenu(null);
+            }}
+            onDoubleClick={(event) => {
+              // Only handle double-clicks on the canvas pane, not on nodes
+              const target = event.target as HTMLElement;
+              if (target.closest(".react-flow__node")) return;
+              const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+              setContextMenu({
+                type: "pane",
+                screenX: event.clientX,
+                screenY: event.clientY,
+                flowX: flowPos.x,
+                flowY: flowPos.y,
+              });
             }}
             onPaneContextMenu={(event) => {
               event.preventDefault();
@@ -1272,11 +1833,83 @@ function BlueprintStudioInner() {
             }}
             panOnScroll
             zoomOnScroll={false}
+            zoomOnDoubleClick={false}
+            snapToGrid
+            snapGrid={[GRID_SIZE, GRID_SIZE]}
             fitView
           >
-            <Background color="rgba(255,255,255,0.06)" gap={22} />
-            <Controls />
+            <Background color="rgba(255,255,255,0.06)" gap={GRID_SIZE} />
+            {validationErrors.length > 0 && (
+              <Panel position="top-right">
+                <div className="space-y-1">
+                  {validationErrors.map((error, i) => (
+                    <div
+                      key={`${error.code}-${error.nodeId ?? ""}-${i}`}
+                      className="flex items-center gap-2 border border-[#c45c5c]/30 bg-[#111314] px-3 py-1.5 text-xs text-[#c45c5c]"
+                    >
+                      <AlertCircle className="size-3.5 shrink-0" />
+                      {error.message}
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            )}
           </ReactFlow>
+          {selectedBlueprint && (
+            <div className="pointer-events-none absolute left-3 top-3 z-10">
+              <div className="pointer-events-auto flex items-center border border-white/10 bg-[#111314] shadow-[0_2px_8px_rgba(0,0,0,0.3)]">
+                {renamingBlueprintId === selectedBlueprint.id ? (
+                  <Input
+                    ref={(el) => el?.focus()}
+                    className="h-9 w-56 border-none bg-transparent px-4 text-sm text-white/90 shadow-none focus-visible:ring-0"
+                    value={selectedBlueprint.name}
+                    onChange={(e) => renameBlueprint(e.target.value)}
+                    onBlur={() => {
+                      requestAnimationFrame(() => setRenamingBlueprintId(null));
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") setRenamingBlueprintId(null);
+                    }}
+                  />
+                ) : (
+                  <button
+                    className="cursor-text py-2 pl-4 pr-1 text-sm font-medium text-white/90"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setRenamingBlueprintId(selectedBlueprint.id);
+                    }}
+                  >
+                    {selectedBlueprint.name}
+                  </button>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center justify-center p-2 text-white/40 transition-colors hover:text-white/80">
+                      <ChevronDown className="size-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className={`w-40 ${DROPDOWN_CONTENT_CLASS}`}>
+                    <DropdownMenuItem
+                      className={DROPDOWN_ITEM_CLASS}
+                      onClick={() => setRenamingBlueprintId(selectedBlueprint.id)}
+                    >
+                      <Pencil className="size-3 text-[#d4602c]" />
+                      Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-white/10" />
+                    <DropdownMenuItem
+                      className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
+                      onClick={() => setDeletingBlueprintId(selectedBlueprint.id)}
+                    >
+                      <Trash2 className="size-3" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          )}
           {selectedNode && (
             <FloatingNodeToolbar
               node={selectedNode}
@@ -1303,17 +1936,17 @@ function BlueprintStudioInner() {
       </main>
 
       {activeRedprint && (
-        <aside className="relative z-10 w-[300px] border-l border-white/10 bg-[#0d0f0f]/95 p-4 overflow-y-auto">
+        <aside className="relative z-10 w-[300px] border-l border-white/10 bg-[#0a0a0a] p-4 overflow-y-auto">
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-xs uppercase tracking-[0.18em] text-[#5c635e]">
+            <p className="font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.18em] text-white/30">
               Redprint
             </p>
             <span
-              className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
+              className={`px-2 py-0.5 font-[family-name:var(--font-geist-mono)] text-[10px] font-medium uppercase tracking-wider ${
                 activeRedprint.status === "running"
-                  ? "bg-[#5a7a6a]/20 text-[#5a7a6a]"
+                  ? "bg-[#d4602c]/20 text-[#d4602c]"
                   : activeRedprint.status === "completed"
-                    ? "bg-[#437c6e]/20 text-[#437c6e]"
+                    ? "bg-emerald-500/20 text-emerald-400"
                     : "bg-[#c45c5c]/20 text-[#c45c5c]"
               }`}
             >
@@ -1321,46 +1954,59 @@ function BlueprintStudioInner() {
             </span>
           </div>
 
-          <p className="mb-3 text-sm text-[#e0e5e2]">{activeRedprint.name}</p>
+          <p className="mb-3 text-sm text-white/90">{activeRedprint.name}</p>
 
           <div className="space-y-2">
             {activeRedprint.nodes.map((node) => (
               <div
                 key={node.name}
-                className="flex items-center justify-between border border-white/10 bg-[#161a19] px-3 py-2"
+                className="flex items-center justify-between border border-white/10 bg-[#111314] px-3 py-2"
               >
                 <div>
-                  <p className="text-xs text-[#e0e5e2]">{node.label ?? node.name}</p>
-                  <p className="text-[10px] text-[#5c635e]">
+                  <p className="text-xs text-white/90">{node.label ?? node.name}</p>
+                  <p className="font-[family-name:var(--font-geist-mono)] text-[10px] text-white/30">
                     {node.role} &middot; {node.status}
                   </p>
                   {node.firedAt && (
-                    <p className="text-[10px] text-[#8a918c]">
+                    <p className="font-[family-name:var(--font-geist-mono)] text-[10px] text-white/50">
                       {new Date(node.firedAt).toLocaleTimeString()}
                     </p>
                   )}
                 </div>
                 {node.role === "producer" &&
-                  activeRedprint.status === "running" && (
+                  activeRedprint.status === "running" &&
+                  (node.inputType === "crypto_monitor" ? (
+                    <div className="text-right">
+                      <p className="text-[10px] text-[#e8a838]">
+                        <TrendingUp className="mr-0.5 inline size-3" />
+                        {node.status === "fired" ? "Triggered" : "Monitoring"}
+                      </p>
+                      {node.lastPrice !== undefined && (
+                        <p className="text-[10px] text-white/40">
+                          ${node.lastPrice.toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
                     <button
-                      className="rounded border border-white/10 px-2 py-1 text-[10px] text-[#5a7a6a] hover:bg-white/5"
+                      className="border border-white/10 px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.1em] text-[#d4602c] hover:bg-white/5"
                       onClick={() => pushEvent(node.name)}
                     >
                       <Zap className="inline size-3" /> Push
                     </button>
-                  )}
+                  ))}
               </div>
             ))}
           </div>
 
           {activeRedprint.decision && (
-            <div className="mt-3 border border-[#437c6e]/30 bg-[#437c6e]/10 px-3 py-2">
-              <p className="text-[10px] uppercase tracking-wider text-[#437c6e]">
+            <div className="mt-3 border border-[#d4602c]/30 bg-[#d4602c]/10 px-3 py-2">
+              <p className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-wider text-[#d4602c]">
                 Decision Result
               </p>
-              <p className="text-sm font-semibold text-[#e0e5e2]">
+              <p className="text-sm font-semibold text-white/90">
                 {activeRedprint.decision.verb} on{" "}
-                {activeRedprint.decision.token_id}
+                {activeRedprint.decision.market_id}
               </p>
             </div>
           )}
@@ -1375,6 +2021,35 @@ function BlueprintStudioInner() {
           </Button>
         </aside>
       )}
+
+      <BlueprintChat
+        key={selectedBlueprintId}
+        blueprintId={selectedBlueprintId}
+        currentBlueprint={selectedBlueprint}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        callbacks={chatCallbacks}
+      />
+
+      <AlertDialog
+        open={!!deletingBlueprintId}
+        onOpenChange={(open: boolean) => { if (!open) setDeletingBlueprintId(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete blueprint?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the blueprint.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteBlueprint}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
