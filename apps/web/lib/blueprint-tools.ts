@@ -38,6 +38,23 @@ const cryptoMonitorSchema = z.object({
   }),
 });
 
+const cryptoPriceSchema = z.object({
+  type: z.literal("input"),
+  inputType: z.literal("crypto_price"),
+  id: z.string().describe("Unique node id, e.g. 'crypto-price-1'"),
+  label: z.string().describe("Display label, e.g. 'BTC Price'"),
+  outputs: z
+    .array(z.string())
+    .describe("Topics this node publishes, e.g. ['topic.orders']"),
+  cryptoMonitorConfig: z.object({
+    symbol: z
+      .string()
+      .describe("Trading pair, e.g. 'BTCUSDT', 'ETHUSDT', 'SOLUSDT'"),
+    condition: z.enum(["drops_below", "rises_above"]).describe("Ignored for crypto_price — set to any value"),
+    targetPrice: z.literal(0).describe("Must be 0 — crypto_price streams live price without a condition"),
+  }),
+});
+
 const decisionNodeSchema = z.object({
   type: z.literal("decision"),
   id: z.string().describe("Unique node id, e.g. 'decision-1'"),
@@ -65,12 +82,31 @@ const outputNodeSchema = z.object({
     .describe("Topics this node consumes, e.g. ['topic.orders']"),
 });
 
+const comparisonNodeSchema = z.object({
+  type: z.literal("comparison"),
+  id: z.string().describe("Unique node id, e.g. 'comparison-1'"),
+  label: z.string().describe("Display label for this node"),
+  inputs: z
+    .array(z.string())
+    .describe("Must be ['input-a', 'input-b']"),
+  outputs: z
+    .array(z.string())
+    .describe("Output topics (usually empty — boolean output via handle)"),
+  comparisonConfig: z.object({
+    operator: z.enum([">", "<", ">=", "<=", "==", "!="]),
+    thresholdA: z.number().optional().describe("Static value for input A (use instead of connecting a node to input-a)"),
+    thresholdB: z.number().optional().describe("Static value for input B (use instead of connecting a node to input-b)"),
+  }),
+});
+
 // ─── Node union (extend by adding to this array) ────────────────
 const nodeSchema = z.union([
   cryptoMonitorSchema,
+  cryptoPriceSchema,
   manualTriggerSchema,
   decisionNodeSchema,
   outputNodeSchema,
+  comparisonNodeSchema,
 ]);
 
 const edgeSchema = z.object({
@@ -80,6 +116,10 @@ const edgeSchema = z.object({
     .string()
     .optional()
     .describe("Required for decision nodes — the branch name to connect from"),
+  targetHandle: z
+    .string()
+    .optional()
+    .describe('Required for comparison nodes — "input-a" or "input-b"'),
 });
 
 // ─── Input schema + exported type ───────────────────────────────
@@ -107,7 +147,7 @@ const updateNodeSchema = z.object({
     .optional()
     .describe("Updated action for decision nodes"),
   inputType: z
-    .enum(["manual_trigger", "crypto_monitor"])
+    .enum(["manual_trigger", "crypto_monitor", "crypto_price"])
     .optional()
     .describe("Change the input node subtype"),
   cryptoMonitorConfig: z
@@ -118,6 +158,14 @@ const updateNodeSchema = z.object({
     })
     .optional()
     .describe("Updated crypto monitor configuration"),
+  comparisonConfig: z
+    .object({
+      operator: z.enum([">", "<", ">=", "<=", "==", "!="]),
+      thresholdA: z.number().optional().describe("Static value for input A"),
+      thresholdB: z.number().optional().describe("Static value for input B"),
+    })
+    .optional()
+    .describe("Updated comparison config (operator and/or thresholds)"),
 });
 
 export type UpdateNodeParams = z.infer<typeof updateNodeSchema>;

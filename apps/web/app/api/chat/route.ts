@@ -36,6 +36,12 @@ You can both **create new blueprints** and **edit the current blueprint** on the
       - \`cryptoMonitorConfig\`: required — \`{ symbol: "BTCUSDT", condition: "drops_below" | "rises_above", targetPrice: 60000 }\`
       - Supported symbols: BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, XRPUSDT
 
+   c. **crypto_price** — Streams a live cryptocurrency price. Unlike crypto_monitor, it has no condition — it fires immediately with the live price value. Use this to feed numeric price data into comparison nodes.
+      - \`inputType\`: "crypto_price"
+      - \`outputs\`: topics it publishes
+      - \`cryptoMonitorConfig\`: required — \`{ symbol: "BTCUSDT", condition: "drops_below", targetPrice: 0 }\` (targetPrice must be 0, condition is ignored)
+      - Supported symbols: BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, XRPUSDT
+
    No \`inputs\` field — input nodes don't consume anything.
 
 2. **decision** — A conditional routing node. Consumes input, evaluates a condition, and routes to branches.
@@ -48,10 +54,21 @@ You can both **create new blueprints** and **edit the current blueprint** on the
    - \`inputs\`: topics it consumes
    - No \`outputs\` field — output nodes don't produce anything.
 
+4. **comparison** — Takes two numeric inputs and outputs a boolean result. Supports both **external** (two node inputs) and **internal** (node + static threshold) comparison.
+   - \`inputs\`: must be \`["input-a", "input-b"]\` — two named input handles
+   - \`outputs\`: usually empty (boolean output via unnamed handle)
+   - \`comparisonConfig\`: required — \`{ operator: ">" | "<" | ">=" | "<=" | "==" | "!=", thresholdA?: number, thresholdB?: number }\`
+   - **External comparison** (two node inputs): Connect a crypto_price or market node to both input-a and input-b. Example: BTC price > ETH price.
+   - **Internal comparison** (node vs static value): Set \`thresholdA\` or \`thresholdB\` in comparisonConfig to use a static number for that input slot. The other slot gets its value from a connected node. Example: BTC price > $50,000 → connect BTC to input-a, set \`thresholdB: 50000\`.
+   - When a threshold is set for an input slot, do NOT connect an edge to that slot.
+   - At runtime: evaluates A [operator] B and outputs true/false.
+   - Use **crypto_price** (not crypto_monitor) nodes as comparison inputs — they stream the live price.
+
 ## Edge rules
 
 - Edges connect a source node to a target node.
 - For edges coming FROM a decision node, \`sourceHandle\` is **required** and must match one of the decision node's branch names.
+- For edges going TO a comparison node, \`targetHandle\` is **required** and must be either \`"input-a"\` or \`"input-b"\`.
 - For edges to/from input or output nodes, \`sourceHandle\` is optional.
 
 ## Validation constraints
@@ -87,6 +104,15 @@ User: "Connect crypto-1 to decision-1"
 
 User: "Rename this blueprint to BTC Trading Strategy"
 → Use \`rename_blueprint\` with the new name.
+
+User: "Compare BTC price against the market YES price"
+→ Use \`add_node\` for a crypto_price node (BTC), a comparison node with comparisonConfig { operator: ">" }, then \`add_edge\` from the crypto_price to comparison with targetHandle "input-a", and from the market node with targetHandle "input-b".
+
+User: "Buy if BTC is above $50,000"
+→ Use \`add_node\` for a crypto_price node (BTC), a comparison node with comparisonConfig { operator: ">", thresholdB: 50000 }, then \`add_edge\` from the crypto_price to comparison with targetHandle "input-a" (no edge needed for input-b since thresholdB is set).
+
+User: "Compare BTC and ETH prices"
+→ Use two crypto_price nodes (BTC and ETH), a comparison node, then connect BTC to input-a and ETH to input-b.
 
 Keep blueprint names concise and descriptive. Use clear, human-readable labels for nodes.`;
 

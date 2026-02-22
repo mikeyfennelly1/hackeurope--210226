@@ -9,6 +9,12 @@ import type { BinancePriceMonitor } from "../services/binance-ws.js";
 export type NodeStatus = "waiting" | "fired";
 export type RedprintStatus = "running" | "completed" | "error";
 
+/** Typed NATS message payload between nodes. */
+export interface NatsNodePayload {
+  output: boolean;
+  value?: number;
+}
+
 export interface NodeState {
   readonly name: string;
   readonly label: string | undefined;
@@ -18,6 +24,7 @@ export interface NodeState {
   firedAt: string | null;
   inputType?: string;
   lastPrice?: number;
+  lastValue?: number;
 }
 
 export interface Redprint {
@@ -52,6 +59,7 @@ export function redprintToJSON(rp: Redprint): RedprintJSON {
       firedAt: state.firedAt,
       ...(state.inputType ? { inputType: state.inputType } : {}),
       ...(state.lastPrice !== undefined ? { lastPrice: state.lastPrice } : {}),
+      ...(state.lastValue !== undefined ? { lastValue: state.lastValue } : {}),
     };
   }
   return {

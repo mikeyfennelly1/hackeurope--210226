@@ -268,9 +268,21 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
             </p>
           </div>
 
-          {/* Outcome prices */}
+          {/* Outcome prices — click to select which feeds downstream */}
           <div className="grid grid-cols-2 border-b border-white/10">
-            <div className="relative border-r border-white/10 px-3 py-3">
+            <div
+              className={`relative cursor-pointer border-r border-white/10 px-3 py-3 transition-colors ${
+                (data.marketOutcome ?? "yes") === "yes" ? "bg-[#d4602c]/10" : "hover:bg-white/[0.03]"
+              }`}
+              onClick={() => {
+                setNodes((nds) =>
+                  nds.map((n) =>
+                    n.id === id ? { ...n, data: { ...n.data, marketOutcome: "yes" as const } } : n,
+                  ),
+                );
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               <div className="mb-0.5 text-[8px] uppercase tracking-[0.3em] text-white/30">
                 {market.outcomes[0] ?? "YES"}
               </div>
@@ -278,7 +290,19 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
                 {Math.round(yesPrice * 100)}<span className="text-[14px]">&cent;</span>
               </div>
             </div>
-            <div className="px-3 py-3">
+            <div
+              className={`cursor-pointer px-3 py-3 transition-colors ${
+                data.marketOutcome === "no" ? "bg-[#d4602c]/10" : "hover:bg-white/[0.03]"
+              }`}
+              onClick={() => {
+                setNodes((nds) =>
+                  nds.map((n) =>
+                    n.id === id ? { ...n, data: { ...n.data, marketOutcome: "no" as const } } : n,
+                  ),
+                );
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               <div className="mb-0.5 text-[8px] uppercase tracking-[0.3em] text-white/30">
                 {market.outcomes[1] ?? "NO"}
               </div>

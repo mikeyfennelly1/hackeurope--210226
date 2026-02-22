@@ -161,6 +161,35 @@ export const BlueprintUtils = {
       }
     }
 
+    // Comparison node validation
+    for (let i = 0; i < blueprint.nodes.length; i++) {
+      const node = blueprint.nodes[i]!;
+      if (node.comparisonConfig) {
+        if (!node.comparisonConfig.operator) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `Comparison node "${node.name}" must have an operator`,
+          });
+        }
+        const subCount = node.subscribesTo?.length ?? 0;
+        const hasThA = node.comparisonConfig.thresholdA !== undefined;
+        const hasThB = node.comparisonConfig.thresholdB !== undefined;
+        const totalInputs = subCount + (hasThA ? 1 : 0) + (hasThB ? 1 : 0);
+        if (totalInputs < 2) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `Comparison node "${node.name}" needs 2 inputs — use upstream nodes and/or set thresholds (has ${totalInputs})`,
+          });
+        }
+        if (subCount > 2) {
+          errors.push({
+            path: `nodes[${i}]`,
+            message: `Comparison node "${node.name}" has too many upstream subscriptions (${subCount}, max 2)`,
+          });
+        }
+      }
+    }
+
     return errors.length > 0 ? fail(errors) : ok();
   },
 };
