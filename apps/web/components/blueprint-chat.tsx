@@ -64,6 +64,21 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
       ...("logicGateConfig" in node && node.logicGateConfig
         ? { logicGateConfig: node.logicGateConfig }
         : {}),
+      ...("rateLimiterConfig" in node && node.rateLimiterConfig
+        ? { rateLimiterConfig: node.rateLimiterConfig }
+        : {}),
+      ...("marketSlug" in node && node.marketSlug
+        ? { marketSlug: node.marketSlug }
+        : {}),
+      ...("marketOutcome" in node && node.marketOutcome
+        ? { marketOutcome: node.marketOutcome }
+        : {}),
+      ...("marketIndex" in node && node.marketIndex != null
+        ? { marketIndex: node.marketIndex }
+        : {}),
+      ...("amountType" in node && node.amountType
+        ? { amountType: node.amountType }
+        : {}),
     });
   }
 
@@ -111,11 +126,24 @@ function blueprintToContext(bp: Blueprint): string {
     if (n.marketOutcome) {
       parts.push(`marketOutcome="${n.marketOutcome}"`);
     }
+    if (n.marketSlug) {
+      parts.push(`marketSlug="${n.marketSlug}"`);
+    }
+    if (n.marketIndex != null) {
+      parts.push(`marketIndex=${n.marketIndex}`);
+    }
+    if (n.amountType) {
+      parts.push(`amountType="${n.amountType}"`);
+    }
+    if (n.rateLimiterConfig) {
+      parts.push(`rateLimiterConfig={maxEvents:${n.rateLimiterConfig.maxEvents}, windowMs:${n.rateLimiterConfig.windowMs}}`);
+    }
     return `  - ${parts.join(" ")}`;
   });
   const edges = bp.edges.map((e) => {
     const parts = [`source="${e.source}" target="${e.target}"`];
     if (e.sourceHandle) parts.push(`sourceHandle="${e.sourceHandle}"`);
+    if (e.targetHandle) parts.push(`targetHandle="${e.targetHandle}"`);
     return `  - ${parts.join(" ")}`;
   });
   return `Current blueprint: "${bp.name}" (id: ${bp.id})\nNodes:\n${nodes.join("\n")}\nEdges:\n${edges.join("\n") || "  (none)"}`;
@@ -138,7 +166,8 @@ type ToolPartType =
   | "tool-delete_node"
   | "tool-add_edge"
   | "tool-delete_edge"
-  | "tool-rename_blueprint";
+  | "tool-rename_blueprint"
+  | "tool-search_markets";
 
 const TOOL_PART_TYPES: ToolPartType[] = [
   "tool-create_blueprint",
@@ -148,6 +177,7 @@ const TOOL_PART_TYPES: ToolPartType[] = [
   "tool-add_edge",
   "tool-delete_edge",
   "tool-rename_blueprint",
+  "tool-search_markets",
 ];
 
 function isToolPart(type: string): type is ToolPartType {
@@ -183,6 +213,19 @@ export function BlueprintChat({
     id: blueprintId,
     messages: loadChatMessages(blueprintId),
     transport: new DefaultChatTransport({ api: "/api/chat" }),
+    sendAutomaticallyWhen: ({ messages: msgs }) => {
+      // Auto-send when the last assistant message has a tool invocation
+      // with output available (e.g. search_markets completed) so the LLM
+      // can continue with a follow-up tool call (e.g. create_blueprint).
+      const last = msgs[msgs.length - 1];
+      if (last?.role !== "assistant") return false;
+      return last.parts.some(
+        (p) =>
+          p.type === "tool-search_markets" &&
+          "state" in p &&
+          p.state === "output-available",
+      );
+    },
     onToolCall: ({ toolCall }) => {
       const cb = callbacksRef.current;
       const name = toolCall.toolName;
@@ -270,6 +313,27 @@ export function BlueprintChat({
               toolCallId: toolCall.toolCallId,
               output: `Blueprint renamed to "${newName}".`,
             });
+            break;
+          }
+
+          case "search_markets": {
+            const { query } = toolCall.input as { query: string };
+            fetch(`/api/polymarket?query=${encodeURIComponent(query)}&limit=10`)
+              .then((res) => res.json())
+              .then((results) => {
+                addToolOutput({
+                  tool: "search_markets",
+                  toolCallId: toolCall.toolCallId,
+                  output: JSON.stringify(results),
+                });
+              })
+              .catch((err) => {
+                addToolOutput({
+                  tool: "search_markets",
+                  toolCallId: toolCall.toolCallId,
+                  output: `Search failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+                });
+              });
             break;
           }
 

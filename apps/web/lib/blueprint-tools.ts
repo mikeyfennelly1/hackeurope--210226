@@ -3,130 +3,108 @@ import { z } from "zod/v4";
 
 // ─── Node type schemas ──────────────────────────────────────────
 // To add a new node type:
-//   1. Define its schema below
-//   2. Add it to the nodeSchema discriminatedUnion
+//   1. Add its type to the `type` enum below
+//   2. Add any type-specific fields as optional properties
 //   3. Handle it in the onToolCall callback in blueprint-chat.tsx
 //   4. Describe it in the system prompt in app/api/chat/route.ts
 
-const manualTriggerSchema = z.object({
-  type: z.literal("input"),
-  inputType: z
-    .literal("manual_trigger")
-    .optional()
-    .describe("Defaults to manual_trigger when omitted"),
+// ─── Flat node schema (Anthropic requires top-level type:"object") ─
+const nodeSchema = z.object({
+  type: z
+    .enum([
+      "input",
+      "decision",
+      "output",
+      "comparison",
+      "webhook",
+      "logic_gate",
+      "market",
+      "rate_limiter",
+    ])
+    .describe("Node type"),
   id: z.string().describe("Unique node id, e.g. 'input-1'"),
   label: z.string().describe("Display label for this node"),
-  outputs: z
-    .array(z.string())
-    .describe("Topics this node publishes, e.g. ['topic.orders']"),
-});
-
-const cryptoPriceSchema = z.object({
-  type: z.literal("input"),
-  inputType: z.literal("crypto_price"),
-  id: z.string().describe("Unique node id, e.g. 'crypto-price-1'"),
-  label: z.string().describe("Display label, e.g. 'BTC Price'"),
-  outputs: z
-    .array(z.string())
-    .describe("Topics this node publishes, e.g. ['topic.orders']"),
-  cryptoMonitorConfig: z.object({
-    symbol: z
-      .string()
-      .describe("Trading pair, e.g. 'BTCUSDT', 'ETHUSDT', 'SOLUSDT'"),
-    condition: z.enum(["drops_below", "rises_above"]).describe("Ignored for crypto_price — set to any value"),
-    targetPrice: z.literal(0).describe("Must be 0 — crypto_price streams live price without a condition"),
-  }),
-});
-
-const decisionNodeSchema = z.object({
-  type: z.literal("decision"),
-  id: z.string().describe("Unique node id, e.g. 'decision-1'"),
-  label: z.string().describe("Display label for this node"),
-  inputs: z
-    .array(z.string())
-    .describe("Topics this node consumes, e.g. ['topic.orders']"),
-  outputs: z
-    .array(z.string())
-    .describe("Branch names, e.g. ['bullish', 'bearish']"),
-});
-
-const outputNodeSchema = z.object({
-  type: z.literal("output"),
-  id: z.string().describe("Unique node id, e.g. 'output-1'"),
-  label: z.string().describe("Display label for this node"),
-  inputs: z
-    .array(z.string())
-    .describe("Topics this node consumes, e.g. ['topic.orders']"),
-  action: z.object({
-    verb: z.enum(["buy", "sell"]).describe("Order side - buy or sell"),
-    token_id: z
-      .string()
-      .describe("Polymarket token ID for the order"),
-    amount: z.number().describe("Order amount in dollars"),
-  }),
-});
-
-const comparisonNodeSchema = z.object({
-  type: z.literal("comparison"),
-  id: z.string().describe("Unique node id, e.g. 'comparison-1'"),
-  label: z.string().describe("Display label for this node"),
-  inputs: z
-    .array(z.string())
-    .describe("Must be ['input-a', 'input-b']"),
-  outputs: z
-    .array(z.string())
-    .describe("Output topics (usually empty — boolean output via handle)"),
-  comparisonConfig: z.object({
-    operator: z.enum([">", "<", ">=", "<=", "==", "!="]),
-    thresholdA: z.number().optional().describe("Static value for input A (use instead of connecting a node to input-a)"),
-    thresholdB: z.number().optional().describe("Static value for input B (use instead of connecting a node to input-b)"),
-  }),
-});
-
-const webhookNodeSchema = z.object({
-  type: z.literal("webhook"),
-  id: z.string().describe("Unique node id, e.g. 'webhook-1'"),
-  label: z.string().describe("Display label for this node"),
   inputs: z
     .array(z.string())
     .optional()
-    .describe("Topics this node consumes (outgoing mode only)"),
+    .describe("Topics this node consumes"),
   outputs: z
     .array(z.string())
     .optional()
-    .describe("Topics this node publishes (incoming mode only)"),
-  webhookConfig: z.object({
-    mode: z.enum(["incoming", "outgoing"]).describe("'incoming' receives HTTP POST data, 'outgoing' sends HTTP POST to a URL"),
-    path: z.string().optional().describe("Endpoint path for incoming mode, e.g. 'my-hook'"),
-    url: z.string().optional().describe("Target URL for outgoing mode, e.g. 'https://example.com/webhook'"),
-  }),
+    .describe("Topics this node publishes or branch names"),
+  // ── input node fields ──
+  inputType: z
+    .enum(["manual_trigger", "crypto_price"])
+    .optional()
+    .describe("Subtype for input nodes. Defaults to 'manual_trigger'"),
+  cryptoMonitorConfig: z
+    .object({
+      symbol: z.string().describe("Trading pair, e.g. 'BTCUSDT'"),
+      condition: z.enum(["drops_below", "rises_above"]).describe("Ignored for crypto_price — set to any value"),
+      targetPrice: z.number().describe("Must be 0 for crypto_price"),
+    })
+    .optional()
+    .describe("Required for crypto_price input nodes"),
+  // ── output node fields ──
+  action: z
+    .object({
+      verb: z.enum(["buy", "sell"]).describe("Order side"),
+      token_id: z.string().describe("Polymarket token ID"),
+      amount: z.number().describe("Order amount"),
+    })
+    .optional()
+    .describe("Required for output nodes — order placement"),
+  amountType: z
+    .enum(["dollars", "shares"])
+    .optional()
+    .describe("Whether amount is in dollars or shares. Defaults to 'dollars'"),
+  // ── market / output shared fields ──
+  marketSlug: z
+    .string()
+    .optional()
+    .describe("Polymarket event slug"),
+  marketOutcome: z
+    .enum(["yes", "no"])
+    .optional()
+    .describe("Which outcome to trade/display. Defaults to 'yes'"),
+  marketIndex: z
+    .number()
+    .optional()
+    .describe("Sub-market index for multi-question events. Defaults to 0"),
+  // ── comparison node fields ──
+  comparisonConfig: z
+    .object({
+      operator: z.enum([">", "<", ">=", "<=", "==", "!="]),
+      thresholdA: z.number().optional().describe("Static value for input A"),
+      thresholdB: z.number().optional().describe("Static value for input B"),
+    })
+    .optional()
+    .describe("Required for comparison nodes"),
+  // ── webhook node fields ──
+  webhookConfig: z
+    .object({
+      mode: z.enum(["incoming", "outgoing"]).describe("'incoming' receives, 'outgoing' sends"),
+      path: z.string().optional().describe("Endpoint path for incoming mode"),
+      url: z.string().optional().describe("Target URL for outgoing mode"),
+    })
+    .optional()
+    .describe("Required for webhook nodes"),
+  // ── logic gate fields ──
+  logicGateConfig: z
+    .object({
+      gateType: z.enum(["and", "or"]).describe("'and' requires all true, 'or' requires any true"),
+    })
+    .optional()
+    .describe("Required for logic_gate nodes"),
+  // ── rate limiter fields ──
+  rateLimiterConfig: z
+    .object({
+      maxEvents: z.number().describe("Max events in the window"),
+      windowMs: z.number().describe("Window in ms (e.g. 60000 = 1 min)"),
+    })
+    .optional()
+    .describe("Required for rate_limiter nodes"),
 });
-
-const logicGateNodeSchema = z.object({
-  type: z.literal("logic_gate"),
-  id: z.string().describe("Unique node id, e.g. 'logic-gate-1'"),
-  label: z.string().describe("Display label — typically 'AND' or 'OR'"),
-  inputs: z
-    .array(z.string())
-    .describe("Numbered input handles: ['input-0', 'input-1'] — starts with 2, more added automatically when all are connected"),
-  outputs: z
-    .array(z.string())
-    .describe("Output topics (usually empty — boolean output via handle)"),
-  logicGateConfig: z.object({
-    gateType: z.enum(["and", "or"]).describe("Gate type — 'and' requires all inputs true, 'or' requires any input true"),
-  }),
-});
-
-// ─── Node union (extend by adding to this array) ────────────────
-const nodeSchema = z.union([
-  cryptoPriceSchema,
-  manualTriggerSchema,
-  decisionNodeSchema,
-  outputNodeSchema,
-  comparisonNodeSchema,
-  webhookNodeSchema,
-  logicGateNodeSchema,
-]);
 
 const edgeSchema = z.object({
   source: z.string().describe("Source node id"),
@@ -134,11 +112,15 @@ const edgeSchema = z.object({
   sourceHandle: z
     .string()
     .optional()
-    .describe("Required for decision nodes — the branch name to connect from"),
+    .describe(
+      "Required for decision nodes (branch name) and market nodes (one of: 'price', 'volume', 'liquidity', 'spread', 'lastTrade')"
+    ),
   targetHandle: z
     .string()
     .optional()
-    .describe('Required for comparison and logic gate nodes — "input-a" or "input-b"'),
+    .describe(
+      'Required for comparison nodes ("input-a" or "input-b") and logic gate nodes ("input-0", "input-1", etc.)'
+    ),
 });
 
 // ─── Input schema + exported type ───────────────────────────────
@@ -200,6 +182,29 @@ const updateNodeSchema = z.object({
     })
     .optional()
     .describe("Updated logic gate config (gate type)"),
+  rateLimiterConfig: z
+    .object({
+      maxEvents: z.number(),
+      windowMs: z.number(),
+    })
+    .optional()
+    .describe("Updated rate limiter configuration"),
+  marketSlug: z
+    .string()
+    .optional()
+    .describe("Updated Polymarket event slug"),
+  marketOutcome: z
+    .enum(["yes", "no"])
+    .optional()
+    .describe("Updated market outcome selection"),
+  marketIndex: z
+    .number()
+    .optional()
+    .describe("Updated sub-market index"),
+  amountType: z
+    .enum(["dollars", "shares"])
+    .optional()
+    .describe("Updated amount type for output nodes"),
 });
 
 export type UpdateNodeParams = z.infer<typeof updateNodeSchema>;
@@ -266,6 +271,18 @@ export const blueprintTools = {
     description: "Rename the current blueprint.",
     inputSchema: z.object({
       name: z.string().describe("The new name for the blueprint"),
+    }),
+  }),
+
+  search_markets: tool({
+    description:
+      "Search Polymarket for events matching a query. " +
+      "Use this to find the correct marketSlug and token IDs before creating market or output nodes. " +
+      "Returns matching events with their slugs, token IDs, and current prices.",
+    inputSchema: z.object({
+      query: z
+        .string()
+        .describe("Search query, e.g. 'Trump', 'Bitcoin', 'Fed rate'"),
     }),
   }),
 };
