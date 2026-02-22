@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { FlowNodeData } from "./blueprint-studio";
 import { usePulse } from "./pulse-context";
+import { cachedFetch, peekCache } from "../lib/cached-fetch";
 
 type PricePoint = { time: number; value: number };
 
@@ -42,8 +43,12 @@ function Sparkline({ data, width, height }: { data: PricePoint[]; width: number;
   const w = width - pad * 2;
   const h = height - pad * 2;
 
-  const points = data.map((d, i) => {
-    const x = pad + (i / (data.length - 1)) * w;
+  const tMin = data[0]!.time;
+  const tMax = data[data.length - 1]!.time;
+  const tRange = tMax - tMin || 1;
+
+  const points = data.map((d) => {
+    const x = pad + ((d.time - tMin) / tRange) * w;
     const y = pad + h - ((d.value - min) / range) * h;
     return `${x},${y}`;
   });
@@ -94,33 +99,51 @@ function formatPrice(value: number): string {
   return `$${value.toFixed(6)}`;
 }
 
-// Ensure symbol is in Binance format (e.g. "BTCUSDT")
-function toBinanceSymbol(sym: string): string {
+// Ensure symbol ends with USDT (e.g. "BTCUSDT")
+function toCryptoSymbol(sym: string): string {
   const s = sym.toUpperCase().trim();
   if (s.endsWith("USDT") || s.endsWith("BUSD") || s.endsWith("USD")) return s;
   return `${s}USDT`;
 }
 
-// --- Binance WebSocket for live trade prices ---
+// --- Polymarket RTDS WebSocket for live crypto prices ---
+// https://docs.polymarket.com/market-data/websocket/rtds
 
-function connectBinanceWs(
+function connectRtds(
   symbol: string,
-  onTrade: (price: number) => void,
+  onPrice: (price: number) => void,
 ): () => void {
-  const stream = symbol.toLowerCase() + "@trade";
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let pingInterval: ReturnType<typeof setInterval> | null = null;
   let alive = true;
 
   function connect() {
     if (!alive) return;
-    ws = new WebSocket(`wss://stream.binance.com:9443/ws/${stream}`);
+    ws = new WebSocket("wss://ws-live-data.polymarket.com");
+
+    ws.onopen = () => {
+      ws?.send(JSON.stringify({
+        action: "subscribe",
+        subscriptions: [{
+          topic: "crypto_prices",
+          type: "update",
+        }],
+      }));
+      pingInterval = setInterval(() => {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send("PING");
+        }
+      }, 5_000);
+    };
 
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data as string);
-        if (data.p) {
-          onTrade(parseFloat(data.p));
+        const raw = event.data as string;
+        if (raw === "PONG" || raw === "") return;
+        const msg = JSON.parse(raw);
+        if (msg.topic === "crypto_prices" && msg.payload?.symbol === symbol && msg.payload?.value != null) {
+          onPrice(msg.payload.value);
         }
       } catch {
         // Ignore malformed
@@ -128,6 +151,7 @@ function connectBinanceWs(
     };
 
     ws.onclose = () => {
+      if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
       if (alive) {
         reconnectTimer = setTimeout(connect, 3000);
       }
@@ -143,12 +167,13 @@ function connectBinanceWs(
   return () => {
     alive = false;
     if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (pingInterval) clearInterval(pingInterval);
     ws?.close();
   };
 }
 
 export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "inputNode">>) {
-  const { pulseNode } = usePulse();
+  const { pulseNode, setNodeValue } = usePulse();
   const [fetchState, setFetchState] = useState<FetchState>({ status: "idle" });
   const [interval, setInterval_] = useState<Interval>("live");
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -164,36 +189,37 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
 
   // Fetch history only (for interval changes when already loaded)
   const fetchHistory = useCallback(async (sym: string, intv: Interval) => {
-    const binSym = toBinanceSymbol(sym);
+    const binSym = toCryptoSymbol(sym);
     let history: PricePoint[] = [];
     if (intv === "live") {
-      const tradesRes = await fetch(
-        `/api/crypto?symbol=${encodeURIComponent(binSym)}&type=trades&seconds=60`,
-      );
-      if (tradesRes.ok) {
-        const tradesData = await tradesRes.json();
+      try {
+        const tradesData = await cachedFetch<{ points?: PricePoint[] }>(
+          `/api/crypto?symbol=${encodeURIComponent(binSym)}&type=trades&seconds=60`,
+          30_000, // 30s TTL for live trade data
+        );
         if (tradesData.points) history = tradesData.points;
-      }
+      } catch { /* non-critical */ }
     } else {
       const cfg = KLINE_CONFIG[intv];
-      const klinesRes = await fetch(
-        `/api/crypto?symbol=${encodeURIComponent(binSym)}&type=klines&interval=${encodeURIComponent(cfg.binance)}&limit=${cfg.limit}`,
-      );
-      if (klinesRes.ok) {
-        const klinesData = await klinesRes.json();
+      try {
+        const klinesData = await cachedFetch<{ points?: PricePoint[] }>(
+          `/api/crypto?symbol=${encodeURIComponent(binSym)}&type=klines&interval=${encodeURIComponent(cfg.binance)}&limit=${cfg.limit}`,
+        );
         if (klinesData.points) history = klinesData.points;
-      }
+      } catch { /* non-critical */ }
     }
     return history;
   }, []);
 
   // Full fetch (price + history) — used on symbol change
   const fetchData = useCallback(async (sym: string, intv: Interval) => {
-    const binSym = toBinanceSymbol(sym);
+    const binSym = toCryptoSymbol(sym);
+    const url = `/api/crypto?symbol=${encodeURIComponent(binSym)}`;
+    if (!peekCache(url)) {
+      setFetchState({ status: "loading" });
+    }
     try {
-      const priceRes = await fetch(`/api/crypto?symbol=${encodeURIComponent(binSym)}`);
-      if (!priceRes.ok) throw new Error(`HTTP ${priceRes.status}`);
-      const priceData = await priceRes.json();
+      const priceData = await cachedFetch<{ error?: string; price: number; change24h: number; high24h: number; low24h: number }>(url);
       if (priceData.error) throw new Error(priceData.error);
 
       const history = await fetchHistory(sym, intv);
@@ -208,18 +234,27 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
       });
       setLiveHistory(history);
       setLivePrice(null);
+      setNodeValue(id, priceData.price);
     } catch (err) {
       setFetchState({
         status: "error",
         message: err instanceof Error ? err.message.toUpperCase() : "FETCH FAILED",
       });
     }
-  }, [fetchHistory]);
+  }, [fetchHistory, id, setNodeValue]);
 
   // Initial fetch on symbol change — full skeleton
   useEffect(() => {
     if (!symbol.trim()) {
       setFetchState({ status: "idle" });
+      return;
+    }
+
+    // Skip debounce when cached data exists (remount case)
+    const binSym = toCryptoSymbol(symbol);
+    const url = `/api/crypto?symbol=${encodeURIComponent(binSym)}`;
+    if (peekCache(url)) {
+      fetchData(symbol, interval);
       return;
     }
 
@@ -257,14 +292,15 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interval]);
 
-  // Binance WebSocket for live price streaming
+  // Polymarket RTDS WebSocket for live price streaming
   useEffect(() => {
     if (fetchState.status !== "loaded" || !symbol.trim()) return;
 
-    const binSym = toBinanceSymbol(symbol);
+    const rtdsSym = toCryptoSymbol(symbol).toLowerCase();
 
-    const cleanup = connectBinanceWs(binSym, (price) => {
+    const cleanup = connectRtds(rtdsSym, (price) => {
       pulseNode(id);
+      setNodeValue(id, price);
       setLivePrice(price);
 
       // Only update the chart in live mode
@@ -385,22 +421,6 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
       {/* Loaded state */}
       {fetchState.status === "loaded" && (
         <div className="relative">
-          {/* Symbol + live indicator */}
-          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-medium uppercase tracking-[0.25em] text-white/40">
-                CRYPTO MONITOR
-              </span>
-            </div>
-            <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-[#d4602c]">
-              <span className="relative flex size-1.5">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#d4602c] opacity-75" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-[#d4602c]" />
-              </span>
-              LIVE
-            </span>
-          </div>
-
           {/* Price display */}
           <div className="border-b border-white/10 px-3 py-3">
             <div className="mb-0.5 text-[8px] uppercase tracking-[0.3em] text-white/30">
@@ -464,32 +484,6 @@ export function CryptoMonitorNode({ id, data, selected }: NodeProps<Node<FlowNod
             </div>
           </div>
 
-          {/* Alert condition */}
-          {targetPrice > 0 && (
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-[8px] uppercase tracking-[0.2em] text-white/25">
-                {condition === "drops_below" ? "ALERT BELOW" : "ALERT ABOVE"}{" "}
-                {formatPrice(targetPrice)}
-              </span>
-              <span
-                className={`text-[9px] font-bold uppercase tracking-[0.2em] ${
-                  isTriggered ? "text-[#d4602c]" : "text-white/20"
-                }`}
-              >
-                {isTriggered ? (
-                  <span className="flex items-center gap-1.5">
-                    <span className="relative flex size-1.5">
-                      <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#d4602c] opacity-75" />
-                      <span className="relative inline-flex size-1.5 rounded-full bg-[#d4602c]" />
-                    </span>
-                    TRIGGERED
-                  </span>
-                ) : (
-                  "WATCHING"
-                )}
-              </span>
-            </div>
-          )}
         </div>
       )}
 

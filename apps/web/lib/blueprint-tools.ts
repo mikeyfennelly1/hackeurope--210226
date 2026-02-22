@@ -102,6 +102,21 @@ const webhookNodeSchema = z.object({
   }),
 });
 
+const logicGateNodeSchema = z.object({
+  type: z.literal("logic_gate"),
+  id: z.string().describe("Unique node id, e.g. 'logic-gate-1'"),
+  label: z.string().describe("Display label — typically 'AND' or 'OR'"),
+  inputs: z
+    .array(z.string())
+    .describe("Numbered input handles: ['input-0', 'input-1'] — starts with 2, more added automatically when all are connected"),
+  outputs: z
+    .array(z.string())
+    .describe("Output topics (usually empty — boolean output via handle)"),
+  logicGateConfig: z.object({
+    gateType: z.enum(["and", "or"]).describe("Gate type — 'and' requires all inputs true, 'or' requires any input true"),
+  }),
+});
+
 // ─── Node union (extend by adding to this array) ────────────────
 const nodeSchema = z.union([
   cryptoPriceSchema,
@@ -110,6 +125,7 @@ const nodeSchema = z.union([
   outputNodeSchema,
   comparisonNodeSchema,
   webhookNodeSchema,
+  logicGateNodeSchema,
 ]);
 
 const edgeSchema = z.object({
@@ -122,7 +138,7 @@ const edgeSchema = z.object({
   targetHandle: z
     .string()
     .optional()
-    .describe('Required for comparison nodes — "input-a" or "input-b"'),
+    .describe('Required for comparison and logic gate nodes — "input-a" or "input-b"'),
 });
 
 // ─── Input schema + exported type ───────────────────────────────
@@ -178,6 +194,12 @@ const updateNodeSchema = z.object({
     })
     .optional()
     .describe("Updated webhook configuration"),
+  logicGateConfig: z
+    .object({
+      gateType: z.enum(["and", "or"]),
+    })
+    .optional()
+    .describe("Updated logic gate config (gate type)"),
 });
 
 export type UpdateNodeParams = z.infer<typeof updateNodeSchema>;

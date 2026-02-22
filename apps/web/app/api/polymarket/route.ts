@@ -5,11 +5,11 @@ export async function GET(request: NextRequest) {
   const tokenId = request.nextUrl.searchParams.get("tokenId");
   const top = request.nextUrl.searchParams.get("top");
 
-  // Top markets endpoint
+  // Top events endpoint (returns events with image, slug, title)
   if (top) {
     const limit = parseInt(top, 10) || 10;
     const res = await fetch(
-      `https://gamma-api.polymarket.com/markets?limit=${limit}&order=volume24hr&ascending=false&closed=false`,
+      `https://gamma-api.polymarket.com/events?limit=${limit}&order=volume24hr&ascending=false&closed=false`,
     );
     if (!res.ok) {
       return NextResponse.json(
@@ -17,16 +17,26 @@ export async function GET(request: NextRequest) {
         { status: res.status },
       );
     }
-    const markets = await res.json();
-    // Transform to simpler format with parsed token IDs
-    const simplified = markets
-      .filter((m: { clobTokenIds?: string }) => m.clobTokenIds)
-      .map((m: { question: string; clobTokenIds: string; volume24hr?: number }) => {
-        const tokenIds = JSON.parse(m.clobTokenIds) as string[];
+    const events = await res.json();
+    const simplified = events
+      .filter((e: { markets?: unknown[] }) => e.markets?.length)
+      .map((e: { title: string; slug: string; image: string; volume: number; markets: Array<{ question: string; clobTokenIds: string | string[]; outcomes: string | string[]; volume24hr?: number }> }) => {
+        const m = e.markets[0]!;
+        const tokenIds = typeof m.clobTokenIds === "string"
+          ? (JSON.parse(m.clobTokenIds) as string[])
+          : m.clobTokenIds;
+        const outcomes = typeof m.outcomes === "string"
+          ? (JSON.parse(m.outcomes) as string[])
+          : m.outcomes;
+        const yesIdx = outcomes.findIndex((o) => o.toLowerCase() === "yes");
+        const noIdx = yesIdx === 0 ? 1 : 0;
         return {
           question: m.question,
-          yesTokenId: tokenIds[0],
-          noTokenId: tokenIds[1],
+          title: e.title,
+          slug: e.slug,
+          image: e.image,
+          yesTokenId: tokenIds[yesIdx >= 0 ? yesIdx : 0],
+          noTokenId: tokenIds[noIdx],
           volume24hr: m.volume24hr,
         };
       });

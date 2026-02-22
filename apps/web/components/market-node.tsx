@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
 import type { FlowNodeData } from "./blueprint-studio";
 import { usePulse } from "./pulse-context";
+import { cachedFetch, peekCache } from "../lib/cached-fetch";
 
 type GammaMarket = {
   question: string;
@@ -31,6 +32,7 @@ type GammaEvent = {
   volume: number;
   volume24hr: number;
   liquidity: number;
+  negRisk: boolean;
   markets: GammaMarket[];
 };
 
@@ -127,11 +129,11 @@ function connectPolymarketWs(
               }
               break;
             case "best_bid_ask":
-              if (msg.asset_id && msg.best_bid) {
+              if (msg.asset_id && (msg.best_bid || msg.best_ask)) {
                 onPrice(
                   msg.asset_id,
-                  parseFloat(msg.best_bid),
-                  parseFloat(msg.best_bid),
+                  NaN, // no price update — best_bid is not the market price
+                  msg.best_bid ? parseFloat(msg.best_bid) : undefined,
                   msg.best_ask ? parseFloat(msg.best_ask) : undefined,
                 );
               }
@@ -169,6 +171,11 @@ function formatCurrency(value: number): string {
   return `$${value.toFixed(0)}`;
 }
 
+function formatAxisDate(ts: number): string {
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function Sparkline({ data, width, height }: { data: PricePoint[]; width: number; height: number }) {
   if (data.length < 2) return null;
 
@@ -177,13 +184,15 @@ function Sparkline({ data, width, height }: { data: PricePoint[]; width: number;
   const max = Math.max(...prices);
   const range = max - min || 0.01;
 
+  const yAxisW = 28;
+  const xAxisH = 12;
   const pad = 2;
-  const w = width - pad * 2;
-  const h = height - pad * 2;
+  const chartW = width - yAxisW - pad;
+  const chartH = height - xAxisH - pad;
 
   const points = data.map((d, i) => {
-    const x = pad + (i / (data.length - 1)) * w;
-    const y = pad + h - ((d.p - min) / range) * h;
+    const x = yAxisW + (i / (data.length - 1)) * chartW;
+    const y = pad + chartH - ((d.p - min) / range) * chartH;
     return `${x},${y}`;
   });
 
@@ -192,10 +201,15 @@ function Sparkline({ data, width, height }: { data: PricePoint[]; width: number;
   const trending = lastPrice >= firstPrice;
 
   const fillPoints = [
-    `${pad},${pad + h}`,
+    `${yAxisW},${pad + chartH}`,
     ...points,
-    `${pad + w},${pad + h}`,
+    `${yAxisW + chartW},${pad + chartH}`,
   ].join(" ");
+
+  const maxLabel = `${Math.round(max * 100)}¢`;
+  const minLabel = `${Math.round(min * 100)}¢`;
+  const startDate = formatAxisDate(data[0]!.t);
+  const endDate = formatAxisDate(data[data.length - 1]!.t);
 
   return (
     <svg width={width} height={height} className="overflow-visible">
@@ -205,6 +219,12 @@ function Sparkline({ data, width, height }: { data: PricePoint[]; width: number;
           <stop offset="100%" stopColor={trending ? "#d4602c" : "#ffffff"} stopOpacity="0" />
         </linearGradient>
       </defs>
+      {/* Y-axis labels */}
+      <text x={yAxisW - 3} y={pad + 5} textAnchor="end" className="fill-white/20" style={{ fontSize: 7, fontFamily: "var(--font-geist-mono)" }}>{maxLabel}</text>
+      <text x={yAxisW - 3} y={pad + chartH} textAnchor="end" className="fill-white/20" style={{ fontSize: 7, fontFamily: "var(--font-geist-mono)" }}>{minLabel}</text>
+      {/* X-axis labels */}
+      <text x={yAxisW} y={height - 1} textAnchor="start" className="fill-white/20" style={{ fontSize: 7, fontFamily: "var(--font-geist-mono)" }}>{startDate}</text>
+      <text x={yAxisW + chartW} y={height - 1} textAnchor="end" className="fill-white/20" style={{ fontSize: 7, fontFamily: "var(--font-geist-mono)" }}>{endDate}</text>
       <polygon
         points={fillPoints}
         fill={`url(#spark-fill-${trending})`}
@@ -218,8 +238,8 @@ function Sparkline({ data, width, height }: { data: PricePoint[]; width: number;
         strokeLinecap="round"
       />
       <circle
-        cx={pad + w}
-        cy={pad + h - ((lastPrice - min) / range) * h}
+        cx={yAxisW + chartW}
+        cy={pad + chartH - ((lastPrice - min) / range) * chartH}
         r="2"
         fill={trending ? "#d4602c" : "rgba(255,255,255,0.6)"}
       />
@@ -227,8 +247,21 @@ function Sparkline({ data, width, height }: { data: PricePoint[]; width: number;
   );
 }
 
+/** Parse clobTokenIds from a raw market and return [yesTokenId, noTokenId] based on outcomes order. */
+function getNormalizedTokenIds(rawMarket: GammaMarket): [string, string] {
+  const tokenIds = typeof rawMarket.clobTokenIds === "string"
+    ? (JSON.parse(rawMarket.clobTokenIds) as string[])
+    : rawMarket.clobTokenIds;
+  const outcomes = typeof rawMarket.outcomes === "string"
+    ? (JSON.parse(rawMarket.outcomes) as string[])
+    : rawMarket.outcomes;
+  const yesIdx = outcomes.findIndex((o) => o.toLowerCase() === "yes");
+  const noIdx = yesIdx === 0 ? 1 : 0;
+  return [tokenIds[yesIdx >= 0 ? yesIdx : 0]!, tokenIds[noIdx]!];
+}
+
 export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "marketNode">>) {
-  const { pulseNode } = usePulse();
+  const { pulseNode, setNodeValue } = usePulse();
   const { setNodes } = useReactFlow();
   const [fetchState, setFetchState] = useState<FetchState>({ status: "idle" });
   const [marketInterval, setMarketInterval] = useState<MarketInterval>("all");
@@ -240,6 +273,7 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
   const tokenIdsRef = useRef<string[]>([]);
   const marketIntervalRef = useRef<MarketInterval>(marketInterval);
   marketIntervalRef.current = marketInterval;
+  const marketIndex = data.marketIndex ?? 0;
 
   // Fetch history only (for interval changes)
   const fetchMarketHistory = useCallback(async (tokenId: string, intv: MarketInterval): Promise<PricePoint[]> => {
@@ -247,19 +281,15 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
       ? { clobInterval: "1d", fidelity: "60" }
       : MARKET_INTERVAL_OPTIONS.find((o) => o.key === intv)!;
     try {
-      const histRes = await fetch(
-        `/api/polymarket?tokenId=${encodeURIComponent(tokenId)}&interval=${encodeURIComponent(cfg.clobInterval)}&fidelity=${encodeURIComponent(cfg.fidelity)}`,
-      );
-      if (histRes.ok) {
-        const histData = (await histRes.json()) as { history: PricePoint[] };
-        let history = histData.history ?? [];
-        if (intv === "live" && history.length > 0) {
-          const cutoff = Math.floor(Date.now() / 1000) - 60;
-          const trimmed = history.filter((p) => p.t >= cutoff);
-          history = trimmed.length >= 2 ? trimmed : history.slice(-10);
-        }
-        return history;
+      const url = `/api/polymarket?tokenId=${encodeURIComponent(tokenId)}&interval=${encodeURIComponent(cfg.clobInterval)}&fidelity=${encodeURIComponent(cfg.fidelity)}`;
+      const histData = await cachedFetch<{ history: PricePoint[] }>(url);
+      let history = histData.history ?? [];
+      if (intv === "live" && history.length > 0) {
+        const cutoff = Math.floor(Date.now() / 1000) - 60;
+        const trimmed = history.filter((p) => p.t >= cutoff);
+        history = trimmed.length >= 2 ? trimmed : history.slice(-10);
       }
+      return history;
     } catch {
       // Price history is non-critical
     }
@@ -268,48 +298,58 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
 
   // Full fetch (event + history) — used on slug change
   const fetchMarket = useCallback(async (slug: string, intv: MarketInterval) => {
-    setFetchState({ status: "loading" });
+    const url = `/api/polymarket?slug=${encodeURIComponent(slug)}`;
+    if (!peekCache(url)) {
+      setFetchState({ status: "loading" });
+    }
     try {
-      const res = await fetch(
-        `/api/polymarket?slug=${encodeURIComponent(slug)}`,
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const events = (await res.json()) as GammaEvent[];
+      const events = await cachedFetch<GammaEvent[]>(url);
       if (!events.length) {
         setFetchState({ status: "error", message: "NO MARKET FOUND" });
         return;
       }
       const event = events[0]!;
-      const rawMarket = event.markets[0];
+      const mIdx = data.marketIndex ?? 0;
+      const selectedMarket = event.markets[mIdx] ?? event.markets[0];
 
       let history: PricePoint[] = [];
-      if (rawMarket) {
-        const tokenIds = typeof rawMarket.clobTokenIds === "string"
-          ? (JSON.parse(rawMarket.clobTokenIds) as string[])
-          : rawMarket.clobTokenIds;
-        tokenIdsRef.current = tokenIds ?? [];
-        const yesTokenId = tokenIds?.[0];
-        if (yesTokenId) {
-          history = await fetchMarketHistory(yesTokenId, intv);
-        }
+      if (selectedMarket) {
+        const [yesToken, noToken] = getNormalizedTokenIds(selectedMarket);
+        tokenIdsRef.current = [yesToken, noToken];
+        history = await fetchMarketHistory(yesToken, intv);
       }
 
       setFetchState({ status: "loaded", event, history });
       setLiveHistory(history);
       setLivePrices({});
+
+      // Cache event title + image in node data for display when toolbar is closed
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === id
+            ? { ...n, data: { ...n.data, marketTitle: event.title, marketImage: event.image } }
+            : n,
+        ),
+      );
     } catch (err) {
       setFetchState({
         status: "error",
         message: err instanceof Error ? err.message.toUpperCase() : "FETCH FAILED",
       });
     }
-  }, [fetchMarketHistory]);
+  }, [fetchMarketHistory, id, setNodes]);
 
   // Slug change — full skeleton
   useEffect(() => {
     const slug = data.marketSlug?.trim();
     if (!slug) {
       setFetchState({ status: "idle" });
+      return;
+    }
+    // Skip debounce when cached data exists (remount case)
+    const slugUrl = `/api/polymarket?slug=${encodeURIComponent(slug)}`;
+    if (peekCache(slugUrl)) {
+      fetchMarket(slug, marketInterval);
       return;
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -345,6 +385,28 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marketInterval]);
 
+  // Sub-market change — refetch history for the new sub-market's YES token
+  useEffect(() => {
+    if (fetchState.status !== "loaded") return;
+    const selectedMarket = fetchState.event.markets.filter((m) => m.active && !m.closed)[marketIndex] ?? fetchState.event.markets[0];
+    if (!selectedMarket) return;
+
+    const [yesToken, noToken] = getNormalizedTokenIds(selectedMarket);
+    tokenIdsRef.current = [yesToken, noToken];
+    setLivePrices({});
+
+    let cancelled = false;
+    setHistoryLoading(true);
+    fetchMarketHistory(yesToken, marketInterval).then((history) => {
+      if (cancelled) return;
+      setLiveHistory(history);
+      setHistoryLoading(false);
+    });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marketIndex]);
+
   // Connect WebSocket when loaded
   useEffect(() => {
     if (fetchState.status !== "loaded") return;
@@ -359,11 +421,15 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
       setWsConnected(true);
       setLivePrices((prev) => ({
         ...prev,
-        [assetId]: { price, bestBid: bestBid ?? prev[assetId]?.bestBid, bestAsk: bestAsk ?? prev[assetId]?.bestAsk },
+        [assetId]: {
+          price: Number.isNaN(price) ? (prev[assetId]?.price ?? 0) : price,
+          bestBid: bestBid ?? prev[assetId]?.bestBid,
+          bestAsk: bestAsk ?? prev[assetId]?.bestAsk,
+        },
       }));
 
-      // Only update the chart in live mode
-      if (assetId === yesTokenId && marketIntervalRef.current === "live") {
+      // Only update the chart in live mode (skip bid/ask-only updates)
+      if (assetId === yesTokenId && marketIntervalRef.current === "live" && !Number.isNaN(price)) {
         setLiveHistory((prev) => {
           const now = Math.floor(Date.now() / 1000);
           const last = prev[prev.length - 1];
@@ -379,21 +445,54 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
     });
 
     return cleanup;
-  }, [fetchState.status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchState.status, marketIndex]);
 
+  const allMarkets = fetchState.status === "loaded"
+    ? fetchState.event.markets.filter((m) => m.active && !m.closed)
+    : [];
   const rawMarket =
-    fetchState.status === "loaded" ? fetchState.event.markets[0] : null;
+    fetchState.status === "loaded" ? allMarkets[marketIndex] ?? allMarkets[0] ?? null : null;
   const market = rawMarket
-    ? {
-        ...rawMarket,
-        outcomes: typeof rawMarket.outcomes === "string"
+    ? (() => {
+        const outcomes = typeof rawMarket.outcomes === "string"
           ? (JSON.parse(rawMarket.outcomes) as string[])
-          : rawMarket.outcomes,
-        outcomePrices: typeof rawMarket.outcomePrices === "string"
+          : rawMarket.outcomes;
+        const outcomePrices = typeof rawMarket.outcomePrices === "string"
           ? (JSON.parse(rawMarket.outcomePrices) as string[])
-          : rawMarket.outcomePrices,
-      }
+          : rawMarket.outcomePrices;
+        // Normalize so index 0 = YES, index 1 = NO
+        const yesIdx = outcomes.findIndex((o) => o.toLowerCase() === "yes");
+        if (yesIdx === 1) {
+          return {
+            ...rawMarket,
+            outcomes: [outcomes[1]!, outcomes[0]!],
+            outcomePrices: [outcomePrices[1]!, outcomePrices[0]!],
+          };
+        }
+        return { ...rawMarket, outcomes, outcomePrices };
+      })()
     : null;
+
+  // Expose active sub-market questions to toolbar via node data
+  useEffect(() => {
+    if (allMarkets.length <= 1) return;
+    const questions = allMarkets.map((m) =>
+      typeof m.question === "string" ? m.question : String(m.question),
+    );
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, marketQuestions: questions } } : n,
+      ),
+    );
+  }, [allMarkets.length, id, setNodes]);
+
+  // Keep tokenIdsRef in sync with the selected sub-market (normalized: [yes, no])
+  useEffect(() => {
+    if (!rawMarket) return;
+    tokenIdsRef.current = getNormalizedTokenIds(rawMarket);
+    setLivePrices({});
+  }, [rawMarket?.question]); // question is a stable identity for a specific sub-market
 
   // Use live prices if available, otherwise fall back to GAMMA data
   const tokenIds = tokenIdsRef.current;
@@ -406,6 +505,19 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
   const liveBestBid = yesLive?.bestBid;
   const liveBestAsk = yesLive?.bestAsk;
   const history = liveHistory;
+
+  const selectedPrice = (data.marketOutcome ?? "yes") === "yes" ? yesPrice : noPrice;
+
+  // Publish per-handle values so comparison nodes can read each output
+  useEffect(() => {
+    if (fetchState.status !== "loaded" || !market) return;
+    setNodeValue(id, selectedPrice);
+    setNodeValue(`${id}:price`, selectedPrice);
+    setNodeValue(`${id}:volume`, parseFloat(market.volume));
+    setNodeValue(`${id}:liquidity`, parseFloat(market.liquidity));
+    setNodeValue(`${id}:spread`, (liveBestAsk ?? market.bestAsk) - (liveBestBid ?? market.bestBid));
+    setNodeValue(`${id}:lastTrade`, yesPrice || market.lastTradePrice);
+  }, [selectedPrice, fetchState.status, id, setNodeValue, market, liveBestAsk, liveBestBid, yesPrice]);
 
   return (
     <div className="relative w-[340px] border border-white/20 bg-[#111314] font-[family-name:var(--font-geist-mono)] shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
@@ -492,7 +604,14 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
       {fetchState.status === "loaded" && market && (
         <div className="relative">
           {/* Question — first section */}
-          <div className="border-b border-white/10 px-3 py-3">
+          <div className="flex items-center gap-2.5 border-b border-white/10 px-3 py-3">
+            {fetchState.event.image && (
+              <img
+                src={fetchState.event.image}
+                alt=""
+                className="size-7 shrink-0 rounded-sm object-cover"
+              />
+            )}
             <p className="text-[13px] font-bold leading-tight tracking-tight text-white/90">
               {market.question}
             </p>
@@ -565,7 +684,7 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
             {historyLoading ? (
               <div className="h-20 w-full animate-pulse rounded bg-white/[0.05]" />
             ) : history.length > 1 ? (
-              <Sparkline data={history} width={314} height={80} />
+              <Sparkline data={history} width={314} height={92} />
             ) : (
               <div className="flex h-20 items-center justify-center">
                 <span className="text-[8px] uppercase tracking-[0.25em] text-white/15">

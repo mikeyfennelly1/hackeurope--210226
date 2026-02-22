@@ -4,7 +4,7 @@ import type {
   NodeRole,
 } from "@repo/backend/blueprints/definition";
 import type { Subscription } from "nats";
-import type { BinancePriceMonitor } from "../services/binance-ws.js";
+import type { CryptoPriceMonitor } from "../services/binance-ws.js";
 
 export type NodeStatus = "waiting" | "fired";
 export type RedprintStatus = "running" | "completed" | "error";
@@ -34,7 +34,7 @@ export interface Redprint {
   nodes: Map<string, NodeState>;
   decision: Decision | null;
   subscriptions: Subscription[];
-  monitors: BinancePriceMonitor[];
+  monitors: CryptoPriceMonitor[];
   readonly createdAt: string;
 }
 

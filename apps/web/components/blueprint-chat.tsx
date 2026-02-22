@@ -61,6 +61,9 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
       ...("webhookConfig" in node && node.webhookConfig
         ? { webhookConfig: node.webhookConfig }
         : {}),
+      ...("logicGateConfig" in node && node.logicGateConfig
+        ? { logicGateConfig: node.logicGateConfig }
+        : {}),
     });
   }
 
@@ -101,6 +104,9 @@ function blueprintToContext(bp: Blueprint): string {
       if (wc.path) wcParts.push(`path:"${wc.path}"`);
       if (wc.url) wcParts.push(`url:"${wc.url}"`);
       parts.push(`webhookConfig={${wcParts.join(", ")}}`);
+    }
+    if ("logicGateConfig" in n && n.logicGateConfig) {
+      parts.push(`logicGateConfig={gateType:"${(n.logicGateConfig as { gateType: string }).gateType}"}`);
     }
     if (n.marketOutcome) {
       parts.push(`marketOutcome="${n.marketOutcome}"`);

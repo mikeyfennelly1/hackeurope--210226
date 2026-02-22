@@ -14,6 +14,7 @@ import {
   type NodeChange,
   type Node,
   type NodeProps,
+  NodeResizer,
   type OnConnectEnd,
   Panel,
   Position,
@@ -938,6 +939,16 @@ function formatComparisonValue(value: number, sourceType: string | undefined, so
   return `$${value.toFixed(6)}`;
 }
 
+const SEEN_PULSES_MAX = 500;
+function pruneSeen(seen: Set<number>) {
+  if (seen.size <= SEEN_PULSES_MAX) return;
+  const keep = SEEN_PULSES_MAX / 2;
+  let i = 0;
+  for (const v of seen) {
+    if (i++ < seen.size - keep) seen.delete(v);
+  }
+}
+
 function ComparisonNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "comparisonNode">>) {
   const op = data.comparisonConfig?.operator ?? ">";
   const thA = data.comparisonConfig?.thresholdA;
@@ -995,9 +1006,10 @@ function ComparisonNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "co
     setNodeValue(id, conditionMet ? 1 : 0);
   }, [conditionMet, id, setNodeValue]);
 
-  // Track source pulse keys to fire exactly once per incoming pulse.
+  // Track source pulse correlation IDs to fire exactly once per original event.
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenPulsesRef = useRef(new Set<number>());
+  const pendingCidsRef = useRef(new Set<number>());
   const [opFlash, setOpFlash] = useState<"pass" | "fail" | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1006,15 +1018,17 @@ function ComparisonNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "co
 
     let hasNew = false;
     for (const sid of sourceIds) {
-      const keys = pulsingNodes.get(sid);
-      if (!keys) continue;
-      for (const key of keys) {
-        if (!seenPulsesRef.current.has(key)) {
-          seenPulsesRef.current.add(key);
+      const entries = pulsingNodes.get(sid);
+      if (!entries) continue;
+      for (const entry of entries) {
+        if (!seenPulsesRef.current.has(entry.correlationId)) {
+          seenPulsesRef.current.add(entry.correlationId);
+          pendingCidsRef.current.add(entry.correlationId);
           hasNew = true;
         }
       }
     }
+    pruneSeen(seenPulsesRef.current);
 
     if (!hasNew) return;
 
@@ -1030,7 +1044,10 @@ function ComparisonNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "co
     if (conditionMet && !pulseTimerRef.current) {
       pulseTimerRef.current = setTimeout(() => {
         pulseTimerRef.current = null;
-        pulseNode(id);
+        for (const cid of pendingCidsRef.current) {
+          pulseNode(id, cid);
+        }
+        pendingCidsRef.current.clear();
       }, 500);
     }
   }, [pulsingNodes, sourceNodeA?.id, sourceNodeB?.id, pulseNode, id, conditionMet]);
@@ -1132,6 +1149,34 @@ function ComparisonNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "co
   );
 }
 
+function describeComparisonSource(
+  sourceNode: Node,
+  allEdges: Edge[],
+  getNode: (id: string) => Node | undefined,
+): string {
+  const cfg = (sourceNode.data as FlowNodeData).comparisonConfig;
+  const op = cfg?.operator ?? ">";
+
+  const edgeA = allEdges.find((e: Edge) => e.target === sourceNode.id && e.targetHandle === "input-a");
+  const edgeB = allEdges.find((e: Edge) => e.target === sourceNode.id && e.targetHandle === "input-b");
+  const srcA = edgeA ? getNode(edgeA.source) : undefined;
+  const srcB = edgeB ? getNode(edgeB.source) : undefined;
+
+  const handleLabelA = edgeA?.sourceHandle && srcA?.type === "marketNode"
+    ? MARKET_OUTPUT_HANDLES_MAP[edgeA.sourceHandle] : undefined;
+  const handleLabelB = edgeB?.sourceHandle && srcB?.type === "marketNode"
+    ? MARKET_OUTPUT_HANDLES_MAP[edgeB.sourceHandle] : undefined;
+
+  const nameA = srcA
+    ? `${srcA.data.label as string}${handleLabelA ? ` ${handleLabelA}` : ""}`
+    : (cfg?.thresholdA !== undefined ? `$${cfg.thresholdA.toLocaleString()}` : "A");
+  const nameB = srcB
+    ? `${srcB.data.label as string}${handleLabelB ? ` ${handleLabelB}` : ""}`
+    : (cfg?.thresholdB !== undefined ? `$${cfg.thresholdB.toLocaleString()}` : "B");
+
+  return `${nameA} ${op} ${nameB}`;
+}
+
 function LogicGateNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "logicGateNode">>) {
   const gateType = data.logicGateConfig?.gateType ?? "and";
   const inputHandles = data.inputs;
@@ -1145,7 +1190,11 @@ function LogicGateNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "log
     return inputHandles.map((handleId) => {
       const edge = edges.find((e) => e.target === id && e.targetHandle === handleId);
       const sourceNode = edge ? getNode(edge.source) : undefined;
-      const label = sourceNode ? (sourceNode.data.label as string) : undefined;
+      const label = sourceNode
+        ? sourceNode.type === "comparisonNode"
+          ? describeComparisonSource(sourceNode, edges, getNode)
+          : (sourceNode.data.label as string)
+        : undefined;
       const value = sourceNode ? (nodeValues[sourceNode.id] ?? undefined) : undefined;
       return { handleId, sourceNodeId: sourceNode?.id, label, value, connected: !!sourceNode };
     });
@@ -1168,38 +1217,75 @@ function LogicGateNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "log
     }
   }, [result, id, setNodeValue]);
 
+  // Per-row flash state
+  const [rowFlash, setRowFlash] = useState<Record<string, "pass" | "fail">>({});
+  const rowFlashTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
   // Pulse cascade
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenPulsesRef = useRef(new Set<number>());
+  const pendingCidsRef = useRef(new Set<number>());
 
   useEffect(() => {
-    const sourceIds = connectedSlots.map((s) => s.sourceNodeId).filter(Boolean) as string[];
     let hasNew = false;
-    for (const sid of sourceIds) {
-      const keys = pulsingNodes.get(sid);
-      if (!keys) continue;
-      for (const key of keys) {
-        if (!seenPulsesRef.current.has(key)) {
-          seenPulsesRef.current.add(key);
+    for (const slot of connectedSlots) {
+      const sid = slot.sourceNodeId;
+      if (!sid) continue;
+      const entries = pulsingNodes.get(sid);
+      if (!entries) continue;
+      let slotHasNew = false;
+      for (const entry of entries) {
+        if (!seenPulsesRef.current.has(entry.correlationId)) {
+          seenPulsesRef.current.add(entry.correlationId);
+          pendingCidsRef.current.add(entry.correlationId);
           hasNew = true;
+          slotHasNew = true;
         }
       }
+      if (slotHasNew) {
+        const flashType = slot.value ? "pass" as const : "fail" as const;
+        const handleId = slot.handleId;
+        if (rowFlashTimersRef.current[handleId]) clearTimeout(rowFlashTimersRef.current[handleId]);
+        rowFlashTimersRef.current[handleId] = setTimeout(() => {
+          setRowFlash((prev) => ({ ...prev, [handleId]: flashType }));
+          rowFlashTimersRef.current[handleId] = setTimeout(() => {
+            setRowFlash((prev) => {
+              const next = { ...prev };
+              delete next[handleId];
+              return next;
+            });
+            delete rowFlashTimersRef.current[handleId];
+          }, 400);
+        }, 400);
+      }
     }
+    pruneSeen(seenPulsesRef.current);
     if (!hasNew) return;
     if (result && !pulseTimerRef.current) {
       pulseTimerRef.current = setTimeout(() => {
         pulseTimerRef.current = null;
-        pulseNode(id);
-      }, 100);
+        for (const cid of pendingCidsRef.current) {
+          pulseNode(id, cid);
+        }
+        pendingCidsRef.current.clear();
+      }, 500);
     }
   }, [pulsingNodes, connectedSlots, pulseNode, id, result]);
 
   useEffect(() => () => {
     if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+    for (const t of Object.values(rowFlashTimersRef.current)) clearTimeout(t);
   }, []);
 
   return (
-    <div className="relative w-[140px] border border-white/20 bg-[#111314] font-[family-name:var(--font-geist-mono)] shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
+    <div className="relative min-w-[140px] border border-white/20 bg-[#111314] font-[family-name:var(--font-geist-mono)] shadow-[0_12px_40px_rgba(0,0,0,0.6)]" style={{ width: "100%", height: "100%" }}>
+      <NodeResizer
+        minWidth={140}
+        minHeight={50}
+        isVisible={!!selected}
+        lineClassName="!border-[#d4602c]/40"
+        handleClassName="!w-2 !h-2 !bg-[#d4602c] !border-[#d4602c]"
+      />
       {/* Corner brackets */}
       <div className={`absolute h-2.5 w-2.5 border-l border-t border-[#d4602c] transition-all ${selected ? "-left-1 -top-1" : "-left-px -top-px"}`} />
       <div className={`absolute h-2.5 w-2.5 border-r border-t border-[#d4602c] transition-all ${selected ? "-right-1 -top-1" : "-right-px -top-px"}`} />
@@ -1232,9 +1318,16 @@ function LogicGateNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "log
         {inputSlots.map((slot) => (
           <div
             key={slot.handleId}
-            className={`relative flex items-center gap-1.5 border-b border-white/5 px-2.5 py-[5px] ${
+            className={`relative flex items-center gap-1.5 border-b border-white/5 px-2.5 py-[5px] transition-colors duration-500 ${
               !slot.connected ? "opacity-40" : ""
             }`}
+            style={{
+              backgroundColor: rowFlash[slot.handleId]
+                ? rowFlash[slot.handleId] === "pass"
+                  ? "rgba(74,222,128,0.12)"
+                  : "rgba(239,68,68,0.10)"
+                : undefined,
+            }}
           >
             <Handle
               type="target"
@@ -1269,7 +1362,7 @@ function RateLimiterNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "r
   const maxEvents = data.rateLimiterConfig?.maxEvents ?? 5;
   const windowMs = data.rateLimiterConfig?.windowMs ?? 60000;
 
-  const { pulsingNodes, pulseNode } = usePulse();
+  const { pulsingNodes, pulseNode, setNodeValue } = usePulse();
   const edges = useStore((s) => s.edges);
 
   // Sliding window of timestamps
@@ -1279,6 +1372,7 @@ function RateLimiterNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "r
 
   // Pulse cascade
   const seenPulsesRef = useRef(new Set<number>());
+  const pendingCidsRef = useRef(new Set<number>());
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Find upstream source node IDs
@@ -1290,15 +1384,17 @@ function RateLimiterNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "r
   useEffect(() => {
     let hasNew = false;
     for (const sid of sourceIds) {
-      const keys = pulsingNodes.get(sid);
-      if (!keys) continue;
-      for (const key of keys) {
-        if (!seenPulsesRef.current.has(key)) {
-          seenPulsesRef.current.add(key);
+      const entries = pulsingNodes.get(sid);
+      if (!entries) continue;
+      for (const entry of entries) {
+        if (!seenPulsesRef.current.has(entry.correlationId)) {
+          seenPulsesRef.current.add(entry.correlationId);
+          pendingCidsRef.current.add(entry.correlationId);
           hasNew = true;
         }
       }
     }
+    pruneSeen(seenPulsesRef.current);
     if (!hasNew) return;
 
     const now = Date.now();
@@ -1309,17 +1405,33 @@ function RateLimiterNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "r
       windowRef.current.push(now);
       setCurrentCount(windowRef.current.length);
       setStatus("pass");
+      setNodeValue(`${id}:pass`, 1);
+      setNodeValue(`${id}:blocked`, 0);
       if (!pulseTimerRef.current) {
         pulseTimerRef.current = setTimeout(() => {
           pulseTimerRef.current = null;
-          pulseNode(id);
-        }, 100);
+          for (const cid of pendingCidsRef.current) {
+            pulseNode(id, cid);
+          }
+          pendingCidsRef.current.clear();
+        }, 500);
       }
     } else {
       setCurrentCount(windowRef.current.length);
       setStatus("blocked");
+      setNodeValue(`${id}:pass`, 0);
+      setNodeValue(`${id}:blocked`, 1);
+      if (!pulseTimerRef.current) {
+        pulseTimerRef.current = setTimeout(() => {
+          pulseTimerRef.current = null;
+          for (const cid of pendingCidsRef.current) {
+            pulseNode(id, cid);
+          }
+          pendingCidsRef.current.clear();
+        }, 100);
+      }
     }
-  }, [pulsingNodes, sourceIds, pulseNode, id, maxEvents, windowMs]);
+  }, [pulsingNodes, sourceIds, pulseNode, id, maxEvents, windowMs, setNodeValue]);
 
   // Periodic cleanup to drain the bar
   useEffect(() => {
@@ -1380,10 +1492,9 @@ function RateLimiterNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "r
           </span>
         </div>
 
-        {/* Fill bar + handles */}
+        {/* Fill bar + input handle */}
         <div className="relative border-t border-white/10 px-3 py-2">
           <Handle type="target" position={Position.Left} />
-          <Handle type="source" position={Position.Right} />
           <div className="mb-1 flex items-center justify-between">
             <span className="text-[9px] text-white/40">
               {currentCount} / {maxEvents}
@@ -1401,6 +1512,16 @@ function RateLimiterNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "r
               }}
             />
           </div>
+        </div>
+
+        {/* Output handles */}
+        <div className="relative flex items-center justify-between border-t border-white/10 px-3 py-1.5">
+          <span className="text-[9px] text-emerald-400/70">PASS</span>
+          <Handle type="source" id="pass" position={Position.Right} />
+        </div>
+        <div className="relative flex items-center justify-between border-t border-white/5 px-3 py-1.5">
+          <span className="text-[9px] text-red-400/60">BLOCKED</span>
+          <Handle type="source" id="blocked" position={Position.Right} />
         </div>
       </div>
 
@@ -2318,6 +2439,9 @@ function BlueprintStudioInner() {
     const result = BlueprintUtils.validate(bp);
     setValidationErrors(result.errors);
     setStatus(result.valid ? "saved" : "invalid");
+    requestAnimationFrame(() => {
+      fitView({ padding: 0.24 });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only sync flow state when switching blueprints
   }, [selectedBlueprintId]);
 
@@ -2550,7 +2674,9 @@ function BlueprintStudioInner() {
             ? ["branch-a", "branch-b"]
             : type === "marketNode"
               ? [...MARKET_OUTPUT_IDS]
-              : type === "outputNode" || type === "comparisonNode" || type === "logicGateNode" || type === "rateLimiterNode" || isWebhookOutgoing
+              : type === "rateLimiterNode"
+                ? ["pass", "blocked"]
+                : type === "outputNode" || type === "comparisonNode" || type === "logicGateNode" || isWebhookOutgoing
                 ? []
                 : isWebhookIncoming
                   ? ["topic.webhook"]

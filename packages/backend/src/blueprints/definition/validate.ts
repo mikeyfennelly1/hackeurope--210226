@@ -112,17 +112,20 @@ export const BlueprintUtils = {
     const decisionNodes = blueprint.nodes.filter(
       (node) => node.role === "decision",
     );
-    if (decisionNodes.length === 0) {
+    const hasLogicGates = blueprint.nodes.some(
+      (node) => node.logicGateConfig != null,
+    );
+    if (decisionNodes.length === 0 && !hasLogicGates) {
       errors.push({
         path: "nodes",
-        message: "Blueprint must have exactly one decision node",
+        message: "Blueprint must have exactly one decision node (or use logic gate nodes)",
       });
     } else if (decisionNodes.length > 1) {
       errors.push({
         path: "nodes",
         message: `Blueprint must have exactly one decision node, found ${decisionNodes.length}: ${decisionNodes.map((node) => node.name).join(", ")}`,
       });
-    } else {
+    } else if (decisionNodes.length === 1) {
       const decision = decisionNodes[0]!;
       const subscribedTo = new Set<string>();
       for (const node of blueprint.nodes) {
