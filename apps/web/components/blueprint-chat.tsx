@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   BlueprintBuilder,
   BlueprintUtils,
@@ -515,6 +517,15 @@ export function BlueprintChat({
                     message.role === "user"
                       ? part.text.split("\n\n---\nCurrent blueprint:")[0]
                       : part.text;
+                  if (message.role === "assistant") {
+                    return (
+                      <div key={i} className="chat-markdown">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {text}
+                        </ReactMarkdown>
+                      </div>
+                    );
+                  }
                   return (
                     <p key={i} className="whitespace-pre-wrap">
                       {text}
