@@ -35,6 +35,7 @@ import {
 } from "@repo/backend/blueprints";
 import {
   AlertCircle,
+  ArrowRight,
   BarChart3,
   CheckCircle2,
   ChevronDown,
@@ -77,6 +78,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { BlueprintChat, type BlueprintEditCallbacks } from "@/components/blueprint-chat";
 import type { AddNodeParams, UpdateNodeParams, AddEdgeParams } from "@/lib/blueprint-tools";
+import { CryptoMonitorNode } from "@/components/crypto-monitor-node";
 import { MarketNode } from "@/components/market-node";
 import { computeLayout, GRID_SIZE } from "@/lib/auto-layout";
 
@@ -380,48 +382,27 @@ function BaseNode({
   );
 }
 
-function InputNode({ data, selected }: NodeProps<Node<FlowNodeData, "inputNode">>) {
-  const isCrypto = data.inputType === "crypto_monitor";
+function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
+  const { data, selected } = props;
+  if (data.inputType === "crypto_monitor") {
+    return <CryptoMonitorNode {...props} />;
+  }
 
   return (
     <BaseNode
       label={data.label}
-      subtitle={isCrypto ? "Crypto Monitor" : "Manual Trigger"}
-      icon={
-        isCrypto ? (
-          <TrendingUp className="size-3.5 text-[#e8a838]" />
-        ) : (
-          <Zap className="size-3.5" />
-        )
-      }
+      subtitle="Manual Trigger"
+      icon={<Zap className="size-3.5" />}
       hasError={data.hasError}
       selected={selected}
     >
       <Handle type="source" position={Position.Right} />
-      {isCrypto && data.cryptoMonitorConfig ? (
-        <div className="space-y-0.5">
-          <p className="text-[11px] font-medium text-[#e8a838]">
-            {data.cryptoMonitorConfig.symbol}
-          </p>
-          {data.cryptoMonitorConfig.targetPrice > 0 && (
-            <p className="text-[11px] text-white/40">
-              {data.cryptoMonitorConfig.condition === "drops_below"
-                ? "Drops below"
-                : "Rises above"}{" "}
-              ${data.cryptoMonitorConfig.targetPrice.toLocaleString()}
-            </p>
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
-            Publishes
-          </div>
-          <p className="mt-0.5 text-[10px] text-white/50">
-            {data.outputs.join(", ") || "none"}
-          </p>
-        </>
-      )}
+      <div className="text-[8px] uppercase tracking-[0.25em] text-white/30">
+        Publishes
+      </div>
+      <p className="mt-0.5 text-[10px] text-white/50">
+        {data.outputs.join(", ") || "none"}
+      </p>
     </BaseNode>
   );
 }
@@ -797,12 +778,17 @@ type NodeOption = {
   hasSource: boolean;
 };
 
-const ALL_NODE_OPTIONS: NodeOption[] = [
-  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#e8a838]" />, hasTarget: false, hasSource: true },
-  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
-  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
+const INPUT_NODE_OPTIONS: NodeOption[] = [
+  { type: "inputNode", inputSubType: "crypto_monitor", label: "Crypto Monitor", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
   { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
 ];
+
+const OTHER_NODE_OPTIONS: NodeOption[] = [
+  { type: "decisionNode", label: "Decision", icon: <GitBranch className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: true },
+  { type: "outputNode", label: "Output", icon: <CheckCircle2 className="size-3 text-[#d4602c]" />, hasTarget: true, hasSource: false },
+];
+
+const ALL_NODE_OPTIONS: NodeOption[] = [...INPUT_NODE_OPTIONS, ...OTHER_NODE_OPTIONS];
 
 const DROPDOWN_CONTENT_CLASS =
   "border-white/10 bg-[#111314] shadow-[0_8px_24px_rgba(0,0,0,0.35)]";
@@ -911,7 +897,28 @@ function CanvasContextMenu({
       >
         {menu.type === "pane" ? (
           <>
-            {ALL_NODE_OPTIONS.map((opt) => (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className={DROPDOWN_SUBTRIGGER_CLASS}>
+                <ArrowRight className="size-3 text-[#d4602c]" />
+                Input
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className={DROPDOWN_CONTENT_CLASS}>
+                {INPUT_NODE_OPTIONS.map((opt) => (
+                  <DropdownMenuItem
+                    key={`${opt.type}-${opt.inputSubType ?? ""}`}
+                    className={DROPDOWN_ITEM_CLASS}
+                    onClick={() => {
+                      onAddNode(opt.type, { x: menu.flowX, y: menu.flowY }, undefined, opt.inputSubType);
+                      onClose();
+                    }}
+                  >
+                    {opt.icon}
+                    {opt.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {OTHER_NODE_OPTIONS.map((opt) => (
               <DropdownMenuItem
                 key={`${opt.type}-${opt.inputSubType ?? ""}`}
                 className={DROPDOWN_ITEM_CLASS}
@@ -942,53 +949,6 @@ function CanvasContextMenu({
   );
 }
 
-function InputNodeDropdown({
-  onSelect,
-}: {
-  onSelect: (subType: InputNodeType) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as globalThis.Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <Button
-        variant="secondary"
-        className="w-full"
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        <Plus className="size-4" />
-        Add Input
-      </Button>
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-full border border-white/10 bg-[#111314] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-          <button
-            className={DROPDOWN_ITEM_CLASS}
-            onClick={() => {
-              onSelect("crypto_monitor");
-              setOpen(false);
-            }}
-          >
-            <TrendingUp className="size-3 text-[#e8a838]" />
-            Crypto Monitor
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function BlueprintStudioInner() {
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState<string>("");
@@ -1010,6 +970,7 @@ function BlueprintStudioInner() {
 
   const skipNextPaneClickRef = useRef(false);
   const isDraggingNodeRef = useRef(false);
+  const wasSelectedBeforeDragRef = useRef(false);
 
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -1687,50 +1648,6 @@ function BlueprintStudioInner() {
           })}
         </div>
 
-        {/* Node Palette */}
-        <div className="border-t border-white/10 px-3 py-3">
-          <p className="mb-2 text-xs uppercase tracking-[0.18em] text-white/30">
-            Node Palette
-          </p>
-          <div className="grid grid-cols-1 gap-2">
-            <InputNodeDropdown
-              onSelect={(subType) =>
-                addNodeByType("inputNode", undefined, undefined, subType)
-              }
-            />
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("outputNode")}
-            >
-              Add Output
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => addNodeByType("decisionNode")}
-            >
-              Add Decision
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => fitView({ duration: 260, padding: 0.24 })}
-            >
-              Recenter Graph
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const laid = computeLayout(nodes, edges);
-                setNodes(laid);
-                requestAnimationFrame(() => {
-                  fitView({ duration: 260, padding: 0.24 });
-                });
-              }}
-            >
-              Auto Layout
-            </Button>
-          </div>
-        </div>
-
         {/* AI Chat */}
         <div className="mt-auto border-t border-white/10 px-3 py-3">
           <Button
@@ -1760,18 +1677,21 @@ function BlueprintStudioInner() {
             onConnectEnd={onConnectEnd}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
-            onNodeDragStart={() => {
+            onNodeDragStart={(_event, node) => {
               isDraggingNodeRef.current = true;
+              wasSelectedBeforeDragRef.current = selectedNodeId === node.id;
             }}
             onNodeDragStop={(_event, node) => {
               setTimeout(() => {
-                setSelectedNodeId(null);
-                // Clear React Flow's internal selected state on the dragged node
-                setNodes((nds) =>
-                  nds.map((n) =>
-                    n.id === node.id ? { ...n, selected: false } : n,
-                  ),
-                );
+                if (!wasSelectedBeforeDragRef.current) {
+                  setSelectedNodeId(null);
+                  // Clear React Flow's internal selected state on the dragged node
+                  setNodes((nds) =>
+                    nds.map((n) =>
+                      n.id === node.id ? { ...n, selected: false } : n,
+                    ),
+                  );
+                }
                 isDraggingNodeRef.current = false;
               }, 50);
             }}

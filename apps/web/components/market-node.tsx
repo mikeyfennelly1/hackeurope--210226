@@ -42,6 +42,107 @@ type FetchState =
   | { status: "error"; message: string }
   | { status: "loaded"; event: GammaEvent; history: PricePoint[] };
 
+// --- Polymarket WebSocket for live price updates ---
+
+type WsMessage = {
+  event_type: string;
+  asset_id?: string;
+  price?: string;
+  best_bid?: string;
+  best_ask?: string;
+  price_changes?: Array<{
+    asset_id: string;
+    price: string;
+    best_bid?: string;
+    best_ask?: string;
+  }>;
+};
+
+type LivePriceCallback = (assetId: string, price: number, bestBid?: number, bestAsk?: number) => void;
+
+function connectPolymarketWs(
+  tokenIds: string[],
+  onPrice: LivePriceCallback,
+): () => void {
+  if (tokenIds.length === 0) return () => {};
+
+  let ws: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let alive = true;
+
+  function connect() {
+    if (!alive) return;
+    ws = new WebSocket("wss://ws-subscriptions-clob.polymarket.com/ws/market");
+
+    ws.onopen = () => {
+      ws?.send(JSON.stringify({
+        assets_ids: tokenIds,
+        type: "market",
+        custom_feature_enabled: true,
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const raw = JSON.parse(event.data as string);
+        const messages: WsMessage[] = Array.isArray(raw) ? raw : [raw];
+
+        for (const msg of messages) {
+          switch (msg.event_type) {
+            case "last_trade_price":
+              if (msg.asset_id && msg.price) {
+                onPrice(msg.asset_id, parseFloat(msg.price));
+              }
+              break;
+            case "price_change":
+              if (msg.price_changes) {
+                for (const pc of msg.price_changes) {
+                  onPrice(
+                    pc.asset_id,
+                    parseFloat(pc.price),
+                    pc.best_bid ? parseFloat(pc.best_bid) : undefined,
+                    pc.best_ask ? parseFloat(pc.best_ask) : undefined,
+                  );
+                }
+              }
+              break;
+            case "best_bid_ask":
+              if (msg.asset_id && msg.best_bid) {
+                onPrice(
+                  msg.asset_id,
+                  parseFloat(msg.best_bid),
+                  parseFloat(msg.best_bid),
+                  msg.best_ask ? parseFloat(msg.best_ask) : undefined,
+                );
+              }
+              break;
+          }
+        }
+      } catch {
+        // Ignore malformed messages
+      }
+    };
+
+    ws.onclose = () => {
+      if (alive) {
+        reconnectTimer = setTimeout(connect, 3000);
+      }
+    };
+
+    ws.onerror = () => {
+      ws?.close();
+    };
+  }
+
+  connect();
+
+  return () => {
+    alive = false;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    ws?.close();
+  };
+}
+
 function formatCurrency(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
@@ -116,7 +217,11 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
   const { setNodes } = useReactFlow();
   const [fetchState, setFetchState] = useState<FetchState>({ status: "idle" });
   const [specsOpen, setSpecsOpen] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [livePrices, setLivePrices] = useState<Record<string, { price: number; bestBid?: number; bestAsk?: number }>>({});
+  const [liveHistory, setLiveHistory] = useState<PricePoint[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tokenIdsRef = useRef<string[]>([]);
 
   const fetchMarket = useCallback(async (slug: string) => {
     setFetchState({ status: "loading" });
@@ -138,6 +243,7 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
         const tokenIds = typeof rawMarket.clobTokenIds === "string"
           ? (JSON.parse(rawMarket.clobTokenIds) as string[])
           : rawMarket.clobTokenIds;
+        tokenIdsRef.current = tokenIds ?? [];
         const yesTokenId = tokenIds?.[0];
         if (yesTokenId) {
           try {
@@ -155,6 +261,8 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
       }
 
       setFetchState({ status: "loaded", event, history });
+      setLiveHistory(history);
+      setLivePrices({});
     } catch (err) {
       setFetchState({
         status: "error",
@@ -178,6 +286,40 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
     };
   }, [data.marketSlug, fetchMarket]);
 
+  // Connect WebSocket when loaded
+  useEffect(() => {
+    if (fetchState.status !== "loaded") return;
+    const tokenIds = tokenIdsRef.current;
+    if (tokenIds.length === 0) return;
+
+    const yesTokenId = tokenIds[0]!;
+    setWsConnected(false);
+
+    const cleanup = connectPolymarketWs(tokenIds, (assetId, price, bestBid, bestAsk) => {
+      setWsConnected(true);
+      setLivePrices((prev) => ({
+        ...prev,
+        [assetId]: { price, bestBid: bestBid ?? prev[assetId]?.bestBid, bestAsk: bestAsk ?? prev[assetId]?.bestAsk },
+      }));
+
+      // Append to sparkline history for the YES token
+      if (assetId === yesTokenId) {
+        setLiveHistory((prev) => {
+          const now = Math.floor(Date.now() / 1000);
+          const last = prev[prev.length - 1];
+          // Throttle: only add a point if >10s since last
+          if (last && now - last.t < 10) {
+            // Update the last point's price instead
+            return [...prev.slice(0, -1), { t: now, p: price }];
+          }
+          return [...prev, { t: now, p: price }];
+        });
+      }
+    });
+
+    return cleanup;
+  }, [fetchState.status]);
+
   const rawMarket =
     fetchState.status === "loaded" ? fetchState.event.markets[0] : null;
   const market = rawMarket
@@ -192,9 +334,17 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
       }
     : null;
 
-  const history = fetchState.status === "loaded" ? fetchState.history : [];
-  const yesPrice = market ? parseFloat(market.outcomePrices[0] ?? "0") : 0;
-  const noPrice = market ? parseFloat(market.outcomePrices[1] ?? "0") : 0;
+  // Use live prices if available, otherwise fall back to GAMMA data
+  const tokenIds = tokenIdsRef.current;
+  const yesTokenId = tokenIds[0];
+  const noTokenId = tokenIds[1];
+  const yesLive = yesTokenId ? livePrices[yesTokenId] : undefined;
+  const noLive = noTokenId ? livePrices[noTokenId] : undefined;
+  const yesPrice = yesLive?.price ?? (market ? parseFloat(market.outcomePrices[0] ?? "0") : 0);
+  const noPrice = noLive?.price ?? (market ? parseFloat(market.outcomePrices[1] ?? "0") : 0);
+  const liveBestBid = yesLive?.bestBid;
+  const liveBestAsk = yesLive?.bestAsk;
+  const history = liveHistory;
 
   return (
     <div className="relative w-[340px] border border-white/20 bg-[#111314] font-[family-name:var(--font-geist-mono)] shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
@@ -323,8 +473,8 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
                   ["VOLUME", formatCurrency(parseFloat(market.volume))],
                   ["LIQUIDITY", formatCurrency(parseFloat(market.liquidity))],
                   ["24H CHANGE", formatPercent(market.oneDayPriceChange)],
-                  ["SPREAD", `$${(market.bestAsk - market.bestBid).toFixed(3)}`],
-                  ["LAST TRADE", `${Math.round(market.lastTradePrice * 100)}\u00a2`],
+                  ["SPREAD", `$${((liveBestAsk ?? market.bestAsk) - (liveBestBid ?? market.bestBid)).toFixed(3)}`],
+                  ["LAST TRADE", `${Math.round((yesPrice || market.lastTradePrice) * 100)}\u00a2`],
                 ].map(([label, value]) => (
                   <div
                     key={label}
