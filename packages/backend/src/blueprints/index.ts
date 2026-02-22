@@ -1,5 +1,5 @@
-import type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
-export type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
+import type { BlueskyMentionConfig, ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
+export type { BlueskyMentionConfig, ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
 export { toDefinition } from "./convert";
 
 export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison" | "logic_gate" | "rate_limiter" | "webhook";
@@ -26,6 +26,7 @@ export type BlueprintNode = {
   amountType?: "dollars" | "shares";
   inputType?: InputNodeType;
   cryptoMonitorConfig?: CryptoMonitorConfig;
+  blueskyMentionConfig?: BlueskyMentionConfig;
   comparisonConfig?: ComparisonConfig;
   marketSlug?: string;
   marketOutcome?: MarketOutcome;

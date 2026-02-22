@@ -29,6 +29,7 @@ import {
   BlueprintBuilder,
   BlueprintUtils,
   toDefinition,
+  type BlueskyMentionConfig,
   type Blueprint,
   type ComparisonOperator,
   type CryptoConditionOperator,
@@ -42,6 +43,7 @@ import {
 import {
   AlertCircle,
   ArrowRight,
+  AtSign,
   BarChart3,
   CheckCircle2,
   ChevronDown,
@@ -88,6 +90,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { BlueprintChat, type BlueprintEditCallbacks } from "@/components/blueprint-chat";
 import type { AddNodeParams, UpdateNodeParams, AddEdgeParams } from "@/lib/blueprint-tools";
+import { BlueskyMentionNode } from "@/components/bluesky-mention-node";
 import { CryptoMonitorNode } from "@/components/crypto-monitor-node";
 import { MarketNode, MARKET_OUTPUT_IDS } from "@/components/market-node";
 import { MarketPicker } from "@/components/market-picker";
@@ -118,6 +121,7 @@ export type FlowNodeData = {
   hasError?: boolean;
   inputType?: InputNodeType;
   cryptoMonitorConfig?: CryptoMonitorConfig;
+  blueskyMentionConfig?: BlueskyMentionConfig;
   marketSlug?: string;
   comparisonConfig?: { operator: ComparisonOperator; thresholdA?: number; thresholdB?: number };
   marketOutcome?: MarketOutcome;
@@ -267,6 +271,7 @@ function blueprintToFlow(blueprint: Blueprint): {
       amountType: node.amountType,
       inputType: node.inputType,
       cryptoMonitorConfig: node.cryptoMonitorConfig,
+      blueskyMentionConfig: node.blueskyMentionConfig,
       comparisonConfig: node.comparisonConfig,
       marketSlug: node.marketSlug,
       marketOutcome: node.marketOutcome,
@@ -314,6 +319,9 @@ function flowToBlueprint(
       ...(node.data.inputType ? { inputType: node.data.inputType } : {}),
       ...(node.data.cryptoMonitorConfig
         ? { cryptoMonitorConfig: node.data.cryptoMonitorConfig }
+        : {}),
+      ...(node.data.blueskyMentionConfig
+        ? { blueskyMentionConfig: node.data.blueskyMentionConfig }
         : {}),
       ...(node.data.comparisonConfig
         ? { comparisonConfig: node.data.comparisonConfig }
@@ -458,6 +466,9 @@ function InputNode(props: NodeProps<Node<FlowNodeData, "inputNode">>) {
   const { data, selected } = props;
   if (data.inputType === "crypto_price") {
     return <CryptoMonitorNode {...props} />;
+  }
+  if (data.inputType === "bluesky_mention") {
+    return <BlueskyMentionNode {...props} />;
   }
 
   return (
@@ -1795,7 +1806,41 @@ function FloatingNodeToolbar({
             </ToolbarField>
           )}
 
-
+          {/* Input node: bluesky mention fields */}
+          {node.type === "inputNode" && node.data.inputType === "bluesky_mention" && (
+            <>
+              <ToolbarField label="Username">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  value={node.data.blueskyMentionConfig?.username ?? ""}
+                  onChange={(e) =>
+                    onUpdate({
+                      blueskyMentionConfig: {
+                        username: e.target.value,
+                        keyword: node.data.blueskyMentionConfig?.keyword ?? "",
+                      },
+                    })
+                  }
+                  placeholder="alice.bsky.social"
+                />
+              </ToolbarField>
+              <ToolbarField label="Keyword">
+                <Input
+                  className="h-6 w-56 text-[11px]"
+                  value={node.data.blueskyMentionConfig?.keyword ?? ""}
+                  onChange={(e) =>
+                    onUpdate({
+                      blueskyMentionConfig: {
+                        username: node.data.blueskyMentionConfig?.username ?? "",
+                        keyword: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="bitcoin"
+                />
+              </ToolbarField>
+            </>
+          )}
 
           {/* Output node: market, side, outcome, amount */}
           {node.type === "outputNode" && (
@@ -2158,6 +2203,7 @@ type NodeOption = {
 
 const INPUT_NODE_OPTIONS: NodeOption[] = [
   { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
+  { type: "inputNode", inputSubType: "bluesky_mention", label: "Bluesky Mention", icon: <AtSign className="size-3 text-[#0085ff]" />, hasTarget: false, hasSource: true },
   { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
   { type: "webhookNode", webhookMode: "incoming", label: "Webhook In", icon: <Globe className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
 ];
@@ -2638,6 +2684,7 @@ function BlueprintStudioInner() {
     }
 
     const isCryptoPrice = type === "inputNode" && inputSubType === "crypto_price";
+    const isBlueskyMention = type === "inputNode" && inputSubType === "bluesky_mention";
     const isWebhookIncoming = type === "webhookNode" && webhookMode === "incoming";
     const isWebhookOutgoing = type === "webhookNode" && webhookMode === "outgoing";
     const id = `${type}-${Date.now()}`;
@@ -2648,7 +2695,9 @@ function BlueprintStudioInner() {
       data: {
         label: isCryptoPrice
             ? "BTC Price"
-            : type === "decisionNode"
+            : isBlueskyMention
+              ? "Bluesky Monitor"
+              : type === "decisionNode"
               ? "New Decision"
               : type === "inputNode"
                 ? "New Input"
@@ -2695,6 +2744,14 @@ function BlueprintStudioInner() {
                 symbol: "BTCUSDT",
                 condition: "drops_below" as CryptoConditionOperator,
                 targetPrice: 0,
+              },
+            }
+          : {}),
+        ...(isBlueskyMention
+          ? {
+              blueskyMentionConfig: {
+                username: "",
+                keyword: "",
               },
             }
           : {}),

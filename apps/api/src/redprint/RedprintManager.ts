@@ -7,6 +7,8 @@ import { getConnection } from "./nats.js";
 import type { NodeState, Redprint } from "./types.js";
 import { getLogger } from "../utils/logger.js";
 import { NodeInstance } from "./NodeInstance.js";
+import { CryptoPriceMonitor } from "../services/binance-ws.js";
+import { BlueskyMentionMonitor } from "../services/bluesky-monitor.js";
 
 const logger = getLogger("RedprintManager");
 const sc = StringCodec();
@@ -36,7 +38,7 @@ export class RedprintManager {
    * All nodes are initialised in `"waiting"` state. NATS subscriptions are
    * registered for every consumer/hybrid/decision node so that upstream events
    * propagate through the graph automatically. Crypto-monitor producer nodes
-   * are also auto-started via {@link BinancePriceMonitor}.
+   * are also auto-started via {@link CryptoPriceMonitor}.
    *
    * @param blueprint - The blueprint definition to instantiate.
    * @returns The newly created and running {@link Redprint}.
@@ -62,7 +64,7 @@ export class RedprintManager {
     }
 
     const subscriptions: Subscription[] = [];
-    const monitors: BinancePriceMonitor[] = [];
+    const monitors: (CryptoPriceMonitor | BlueskyMentionMonitor)[] = [];
 
     const redprint: Redprint = {
       id,
@@ -92,7 +94,7 @@ export class RedprintManager {
 
     // Auto-wire crypto monitor producer nodes
     const cryptoProducers = blueprint.nodes.filter(
-      (n) => n.role === "producer" && n.inputType === "crypto_monitor" && n.cryptoMonitorConfig,
+      (n) => n.role === "producer" && n.inputType === "crypto_price" && n.cryptoMonitorConfig,
     );
     logger.debug(`[${id.slice(0, 8)}] Wiring ${cryptoProducers.length} crypto monitor producer(s)`);
 
@@ -102,7 +104,7 @@ export class RedprintManager {
         `[${id.slice(0, 8)}] Starting CryptoMonitor for "${nodeDef.name}": symbol=${config.symbol} condition=${config.condition} targetPrice=${config.targetPrice}`,
       );
 
-      const monitor = new BinancePriceMonitor({
+      const monitor = new CryptoPriceMonitor({
         symbol: config.symbol,
         operator: config.condition,
         targetPrice: config.targetPrice,
@@ -144,6 +146,55 @@ export class RedprintManager {
       monitor.start();
       monitors.push(monitor);
       logger.trace(`[${id.slice(0, 8)}] CryptoMonitor "${nodeDef.name}" started`);
+    }
+
+    // Auto-wire bluesky mention producer nodes
+    const blueskyProducers = blueprint.nodes.filter(
+      (n) => n.role === "producer" && n.inputType === "bluesky_mention" && n.blueskyMentionConfig,
+    );
+    logger.debug(`[${id.slice(0, 8)}] Wiring ${blueskyProducers.length} bluesky mention producer(s)`);
+
+    for (const nodeDef of blueskyProducers) {
+      const config = nodeDef.blueskyMentionConfig!;
+      logger.trace(
+        `[${id.slice(0, 8)}] Starting BlueskyMentionMonitor for "${nodeDef.name}": username=${config.username} keyword=${config.keyword}`,
+      );
+
+      const monitor = new BlueskyMentionMonitor({
+        username: config.username,
+        keyword: config.keyword,
+      });
+
+      monitor.on("poll", ({ latestText }: { postCount: number; latestText: string }) => {
+        const nodeState = redprint.nodes.get(nodeDef.name);
+        if (nodeState) {
+          nodeState.lastPost = latestText || undefined;
+        }
+      });
+
+      monitor.on(
+        "mention_found",
+        ({ text }: { post: unknown; text: string }) => {
+          logger.info(
+            `[${id.slice(0, 8)}] BlueskyMention "${nodeDef.name}": mention found — firing node`,
+          );
+          const nodeState = redprint.nodes.get(nodeDef.name);
+          if (nodeState && nodeState.status === "waiting") {
+            nodeState.status = "fired";
+            nodeState.output = true;
+            nodeState.firedAt = new Date().toISOString();
+            nodeState.lastPost = text;
+
+            const subject = toNatsSubject(id, nodeDef.name);
+            logger.debug(`[${id.slice(0, 8)}] Publishing mention_found event to subject "${subject}"`);
+            getConnection().publish(subject, sc.encode(JSON.stringify({ output: true })));
+          }
+        },
+      );
+
+      monitor.start();
+      monitors.push(monitor);
+      logger.trace(`[${id.slice(0, 8)}] BlueskyMentionMonitor "${nodeDef.name}" started`);
     }
 
     logger.trace(`[${id.slice(0, 8)}] dispatch() complete — returning redprint`);
