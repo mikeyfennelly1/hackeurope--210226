@@ -4,6 +4,7 @@ import type { BlueprintDefinition, Decision } from "@repo/backend/blueprints/def
 import type { NodeState, RedprintStatus } from "./types.js";
 import { DecisionBuffer } from "./DecisionBuffer.js";
 import { Decider } from "./Decider.js";
+import { getLogger } from "../utils/logger.js";
 
 export class RedPrint {
   readonly id: string;
@@ -15,6 +16,7 @@ export class RedPrint {
   subscriptions: Subscription[];
   private readonly decisionBuffer: DecisionBuffer;
   private readonly decider: Decider;
+  private readonly logger;
 
   constructor(blueprint: BlueprintDefinition) {
     this.id = randomUUID();
@@ -23,6 +25,7 @@ export class RedPrint {
     this.status = "running";
     this.decision = null;
     this.subscriptions = [];
+    this.logger = getLogger(`RedPrint:${this.id.slice(0, 8)}`);
 
     this.nodes = new Map(
       blueprint.nodes.map((node) => [
@@ -50,28 +53,39 @@ export class RedPrint {
       (decisionNode.subscribesTo ?? []).map((dep) => [dep.node, dep.requiredValue] as const),
     );
     this.decider = new Decider(requiredState, decisionNode.action);
+
+    this.logger.info(
+      `Instantiated from blueprint "${blueprint.name}" with ${blueprint.nodes.length} node(s)`,
+    );
+    this.logger.debug(`Producer nodes: [${producerNodes.map((n) => n.name).join(", ")}]`);
   }
 
   writeToKey(keyName: string, value: boolean): void {
-    console.log(`[RedPrint ${this.id}] node "${keyName}" fired with output=${value}`);
+    this.logger.info(`Node "${keyName}" fired with output=${value}`);
+    this.logger.trace(`DecisionBuffer state before write: ${JSON.stringify(this.decisionBuffer.toRecord())}`);
     this.decisionBuffer.write(keyName, value);
 
     if (this.decisionBuffer.isDecideable()) {
-      console.log(`[RedPrint ${this.id}] all producers have fired — evaluating decision`);
+      this.logger.info("All producers have fired — evaluating decision");
       this.decideAndTakeAction();
+    } else {
+      this.logger.debug(`Waiting for remaining producers: [${
+        this.decisionBuffer.keys.filter((k) => !(k in this.decisionBuffer.toRecord())).join(", ")
+      }]`);
     }
   }
 
   private decideAndTakeAction(): void {
     const resultSet = this.decisionBuffer.toRecord();
+    this.logger.debug(`Evaluating with result set: ${JSON.stringify(resultSet)}`);
     const shouldAct = this.decider.executeRuleChain(resultSet);
 
     if (shouldAct) {
       this.decider.executeAction();
       this.status = "completed";
-      console.log(`[RedPrint ${this.id}] status → completed`);
+      this.logger.info("Status → completed");
     } else {
-      console.log(`[RedPrint ${this.id}] rule chain returned false — no action taken`);
+      this.logger.info("Rule chain returned false — no action taken");
     }
   }
 }

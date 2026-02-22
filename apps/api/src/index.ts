@@ -6,6 +6,9 @@ import { dispatch } from "./redprint/manager.js";
 import { redprintRouter } from "./redprint/routes.js";
 import { polymarketRoutes } from "./routes/index.js";
 import { errorHandler } from "./middleware/index.js";
+import { getLogger } from "./utils/logger.js";
+
+const logger = getLogger("App");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -15,7 +18,7 @@ app.use(express.json());
 
 // Request logging
 app.use((req, _res, next) => {
-  console.log(`${req.method} ${req.path}`);
+  logger.debug(`${req.method} ${req.path}`);
   next();
 });
 
@@ -34,13 +37,14 @@ app.use("/api/polymarket", polymarketRoutes);
 app.use(errorHandler);
 
 async function start() {
+  logger.info("Starting API server...");
   await connectNats();
   app.listen(port, () => {
-    console.log(`API server running on http://localhost:${port}`);
+    logger.info(`API server running on http://localhost:${port}`);
   });
 }
 
 start().catch((err) => {
-  console.error("Failed to start:", err);
+  logger.error("Failed to start:", err);
   process.exit(1);
 });

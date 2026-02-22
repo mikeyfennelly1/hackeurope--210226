@@ -1,11 +1,15 @@
 import { connect, type NatsConnection } from "nats";
+import { getLogger } from "../utils/logger.js";
+
+const logger = getLogger("NATS");
 
 let connection: NatsConnection | null = null;
 
 export async function connectNats(): Promise<NatsConnection> {
   const servers = process.env.NATS_URL ?? "localhost:4222";
+  logger.info(`Connecting to NATS at ${servers}...`);
   connection = await connect({ servers });
-  console.log(`Connected to NATS at ${servers}`);
+  logger.info(`Connected to NATS at ${servers}`);
   return connection;
 }
 

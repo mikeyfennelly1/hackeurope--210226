@@ -12,6 +12,9 @@ import {
 import { OrderSide, OrderType } from "../types/common.types.js";
 import { config } from "../config/env.js";
 import { PolymarketError, ValidationError, NotFoundError } from "../utils/errors.js";
+import { getLogger } from "../utils/logger.js";
+
+const logger = getLogger("PolymarketService");
 
 /**
  * Service for interacting with Polymarket CLOB
@@ -25,6 +28,7 @@ export class PolymarketService {
   private async getClient(): Promise<ClobClient> {
     if (this.client) return this.client;
 
+    logger.info(`Initializing CLOB client (host=${config.polymarket.clobHost}, chainId=${config.polymarket.chainId})`);
     const wallet = new Wallet(config.polymarket.privateKey);
 
     this.client = new ClobClient(
@@ -38,6 +42,7 @@ export class PolymarketService {
       }
     );
 
+    logger.debug("CLOB client initialized successfully");
     return this.client;
   }
 
@@ -85,6 +90,9 @@ export class PolymarketService {
    * For SELL orders: amount is the number of shares to sell
    */
   async placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResponse> {
+    logger.info(
+      `Placing ${request.side} order — tokenId=${request.tokenId}, amount=${request.amount}, type=${request.orderType ?? OrderType.FOK}`,
+    );
     this.validateOrder(request);
 
     const client = await this.getClient();
@@ -92,9 +100,11 @@ export class PolymarketService {
     const sdkOrderType = this.mapOrderType(request.orderType || OrderType.FOK);
 
     try {
+      logger.debug(`Fetching tick size and negRisk for token ${request.tokenId}`);
       // Fetch tick size and negRisk for the token
       const tickSize = await client.getTickSize(request.tokenId);
       const negRisk = await client.getNegRisk(request.tokenId);
+      logger.trace(`tickSize=${tickSize}, negRisk=${negRisk}`);
 
       const order = await client.createAndPostMarketOrder(
         {
@@ -111,7 +121,7 @@ export class PolymarketService {
         sdkOrderType
       );
 
-      return {
+      const response: PlaceOrderResponse = {
         orderId: order.orderID || order.id || "",
         status: order.status || "FILLED",
         tokenId: request.tokenId,
@@ -121,7 +131,12 @@ export class PolymarketService {
         filledAmount: parseFloat(order.takingAmount || order.makingAmount || "0"),
         createdAt: new Date().toISOString(),
       };
+
+      logger.info(`Order placed — id=${response.orderId}, status=${response.status}, filled=${response.filledAmount}`);
+      logger.debug(`Order details: ${JSON.stringify(response)}`);
+      return response;
     } catch (error) {
+      logger.error(`Failed to place market order: ${(error as Error).message}`);
       throw new PolymarketError(
         `Failed to place market order: ${(error as Error).message}`,
         error
@@ -133,12 +148,14 @@ export class PolymarketService {
    * Get market information for a token
    */
   async getMarketInfo(tokenId: string): Promise<MarketInfo> {
+    logger.info(`Fetching market info for token ${tokenId}`);
     const client = await this.getClient();
 
     try {
+      logger.debug(`Fetching order book for token ${tokenId}`);
       const orderBook = await client.getOrderBook(tokenId);
 
-      return {
+      const info: MarketInfo = {
         conditionId: orderBook.market,
         tokenId: orderBook.asset_id,
         outcome: "Yes", // This would need to be determined from market data
@@ -146,7 +163,11 @@ export class PolymarketService {
         tickSize: orderBook.tick_size,
         negRisk: orderBook.neg_risk,
       };
+
+      logger.debug(`Market info: price=${info.price}, tickSize=${info.tickSize}, negRisk=${info.negRisk}`);
+      return info;
     } catch (error) {
+      logger.error(`Failed to get market info for token ${tokenId}: ${(error as Error).message}`);
       throw new PolymarketError(
         `Failed to get market info: ${(error as Error).message}`,
         error
@@ -167,15 +188,18 @@ export class PolymarketService {
     sizeMatched: string;
     createdAt: number;
   }> {
+    logger.info(`Fetching order ${orderId}`);
     const client = await this.getClient();
 
     try {
       const order = await client.getOrder(orderId);
 
       if (!order) {
+        logger.warn(`Order ${orderId} not found`);
         throw new NotFoundError(`Order ${orderId}`);
       }
 
+      logger.debug(`Order ${orderId}: status=${order.status}, side=${order.side}, price=${order.price}`);
       return {
         orderId: order.id,
         status: order.status,
@@ -188,6 +212,7 @@ export class PolymarketService {
       };
     } catch (error) {
       if (error instanceof NotFoundError) throw error;
+      logger.error(`Failed to get order ${orderId}: ${(error as Error).message}`);
       throw new PolymarketError(
         `Failed to get order: ${(error as Error).message}`,
         error
@@ -199,11 +224,14 @@ export class PolymarketService {
    * Cancel an existing order
    */
   async cancelOrder(orderId: string): Promise<void> {
+    logger.info(`Cancelling order ${orderId}`);
     const client = await this.getClient();
 
     try {
       await client.cancelOrder({ orderID: orderId });
+      logger.info(`Order ${orderId} cancelled successfully`);
     } catch (error) {
+      logger.error(`Failed to cancel order ${orderId}: ${(error as Error).message}`);
       throw new PolymarketError(
         `Failed to cancel order: ${(error as Error).message}`,
         error
