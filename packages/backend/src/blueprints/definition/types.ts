@@ -14,25 +14,36 @@ export type ComparisonOperator = ">" | "<" | ">=" | "<=" | "==" | "!=";
 
 export type Decision = "buy" | "sell";
 
+export type InputNodeType = "manual_trigger" | "crypto_monitor";
+
+export type CryptoConditionOperator = "drops_below" | "rises_above";
+
+export interface CryptoMonitorConfig {
+  readonly symbol: string;
+  readonly condition: CryptoConditionOperator;
+  readonly targetPrice: number;
+}
+
 export interface NodeAction {
   readonly verb: Decision;
   readonly token_id: string;
   readonly amount: number;
 }
 
+export interface SubscriptionRef {
+  readonly node: string;
+  readonly requiredValue?: boolean;
+}
+
 export interface NodeDefinition {
   readonly name: string;
   readonly label?: string;
   readonly role: NodeRole;
-  readonly subscribesTo?: readonly string[];
+  readonly subscribesTo?: readonly (string | SubscriptionRef)[];
   /** Required for consumer (output) nodes. Declares the market action to execute. */
   readonly action?: NodeAction;
-  readonly inputType?: "manual_trigger" | "crypto_monitor" | "crypto_price";
-  readonly cryptoMonitorConfig?: {
-    readonly symbol: string;
-    readonly condition: "drops_below" | "rises_above";
-    readonly targetPrice: number;
-  };
+  readonly inputType?: InputNodeType | "crypto_price";
+  readonly cryptoMonitorConfig?: CryptoMonitorConfig;
   readonly comparisonConfig?: {
     readonly operator: ComparisonOperator;
     readonly thresholdA?: number;

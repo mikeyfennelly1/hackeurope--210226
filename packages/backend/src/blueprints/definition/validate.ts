@@ -1,6 +1,7 @@
 import type {
   BlueprintDefinition,
   NodeDefinition,
+  SubscriptionRef,
   ValidationError,
   ValidationResult,
 } from "./types.js";
@@ -13,6 +14,10 @@ function fail(errors: ValidationError[]): ValidationResult {
   return { valid: false, errors };
 }
 
+function getNodeName(dep: string | SubscriptionRef): string {
+  return typeof dep === "string" ? dep : dep.node;
+}
+
 function detectCycle(nodes: readonly NodeDefinition[]): string[] | null {
   const adj = new Map<string, string[]>();
   for (const node of nodes) {
@@ -20,7 +25,7 @@ function detectCycle(nodes: readonly NodeDefinition[]): string[] | null {
   }
   for (const node of nodes) {
     for (const dep of node.subscribesTo ?? []) {
-      adj.get(dep)?.push(node.name);
+      adj.get(getNodeName(dep))?.push(node.name);
     }
   }
 
@@ -66,10 +71,11 @@ export const BlueprintUtils = {
       const node = blueprint.nodes[i]!;
       for (let j = 0; j < (node.subscribesTo?.length ?? 0); j++) {
         const ref = node.subscribesTo![j]!;
-        if (!nodeNames.has(ref)) {
+        const nodeName = getNodeName(ref);
+        if (!nodeNames.has(nodeName)) {
           errors.push({
             path: `nodes[${i}].subscribesTo[${j}]`,
-            message: `References non-existent node "${ref}"`,
+            message: `References non-existent node "${nodeName}"`,
           });
         }
       }
@@ -78,7 +84,7 @@ export const BlueprintUtils = {
     const consumedNodes = new Set<string>();
     for (const node of blueprint.nodes) {
       for (const dep of node.subscribesTo ?? []) {
-        consumedNodes.add(dep);
+        consumedNodes.add(getNodeName(dep));
       }
     }
 
@@ -121,7 +127,7 @@ export const BlueprintUtils = {
       const subscribedTo = new Set<string>();
       for (const node of blueprint.nodes) {
         for (const dep of node.subscribesTo ?? []) {
-          subscribedTo.add(dep);
+          subscribedTo.add(getNodeName(dep));
         }
       }
 

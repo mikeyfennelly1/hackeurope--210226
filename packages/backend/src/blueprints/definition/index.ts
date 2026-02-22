@@ -1,8 +1,11 @@
 export type {
   NodeRole,
   Decision,
+  InputNodeType,
+  CryptoConditionOperator,
+  CryptoMonitorConfig,
   NodeAction,
-  NodeSubscription,
+  SubscriptionRef,
   NodeDefinition,
   BlueprintDefinition,
   ValidationError,
