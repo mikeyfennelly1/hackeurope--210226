@@ -8,7 +8,7 @@ import {
   BlueprintUtils,
   type Blueprint,
 } from "@repo/backend/blueprints";
-import { MessageCircle, Send, X, Loader2 } from "lucide-react";
+import { MessageCircle, Send, X, Loader2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
   BlueprintToolParams,
@@ -195,6 +195,11 @@ const VALIDATION_FAILED_MARKER = "[VALIDATION_FAILED]";
 
 function isToolPart(type: string): type is ToolPartType {
   return TOOL_PART_TYPES.includes(type as ToolPartType);
+}
+
+function toolDisplayName(type: string): string {
+  const name = type.replace("tool-", "").replace(/_/g, " ");
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 export function BlueprintChat({
@@ -524,17 +529,34 @@ export function BlueprintChat({
                       output?: unknown;
                       errorText?: string;
                     };
+                    const isError = toolPart.state === "output-error";
+                    const isProcessing = toolPart.state !== "output-available" && !isError;
                     return (
-                      <div
+                      <details
                         key={i}
-                        className="mt-1 border border-[#d4602c]/30 bg-[#d4602c]/5 px-3 py-2 font-[family-name:var(--font-geist-mono)] text-xs text-[#d4602c]"
+                        className="group mt-1 border border-[#d4602c]/30 bg-[#d4602c]/5 font-[family-name:var(--font-geist-mono)] text-xs text-[#d4602c]"
                       >
-                        {toolPart.state === "output-available"
-                          ? String(toolPart.output)
-                          : toolPart.state === "output-error"
-                            ? `Error: ${toolPart.errorText}`
-                            : "Processing..."}
-                      </div>
+                        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-1.5 select-none hover:bg-[#d4602c]/10">
+                          <ChevronRight className="size-3 shrink-0 transition-transform group-open:rotate-90" />
+                          <span className="truncate">
+                            {isProcessing
+                              ? `${toolDisplayName(part.type)}...`
+                              : isError
+                                ? `${toolDisplayName(part.type)} — Error`
+                                : toolDisplayName(part.type)}
+                          </span>
+                          {isProcessing && (
+                            <Loader2 className="ml-auto size-3 shrink-0 animate-spin" />
+                          )}
+                        </summary>
+                        {!isProcessing && (
+                          <div className="border-t border-[#d4602c]/20 px-3 py-2 text-[#d4602c]/80">
+                            {isError
+                              ? `Error: ${toolPart.errorText}`
+                              : String(toolPart.output)}
+                          </div>
+                        )}
+                      </details>
                     );
                   }
                   return null;
