@@ -86,6 +86,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(simplified);
   }
 
+  // Order book endpoint
+  const book = request.nextUrl.searchParams.get("book");
+  if (book) {
+    const res = await fetch(
+      `https://clob.polymarket.com/book?token_id=${encodeURIComponent(book)}`,
+    );
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: `CLOB API returned ${res.status}` },
+        { status: res.status },
+      );
+    }
+    const data = await res.json();
+    return NextResponse.json(data);
+  }
+
   // Price history endpoint
   if (tokenId) {
     const interval = request.nextUrl.searchParams.get("interval") ?? "all";

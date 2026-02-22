@@ -48,7 +48,7 @@ export interface NodeDefinition {
     readonly thresholdB?: number;
   };
   readonly logicGateConfig?: {
-    readonly gateType: "and" | "or";
+    readonly gateType: "and" | "or" | "nand" | "xor";
   };
   readonly rateLimiterConfig?: {
     readonly maxEvents: number;
@@ -59,6 +59,11 @@ export interface NodeDefinition {
     readonly outcome: "yes" | "no";
   };
   readonly webhookConfig?: WebhookConfig;
+  readonly signalConfig?: {
+    readonly marketSlug: string;
+    readonly windowSeconds: number;
+    readonly refreshMs: number;
+  };
 }
 
 export interface BlueprintDefinition {

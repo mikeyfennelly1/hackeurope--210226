@@ -17,6 +17,9 @@ importers:
       tailwindcss:
         specifier: ^4.1.18
         version: 4.2.0
+      tsx:
+        specifier: ^4.19.4
+        version: 4.21.0
       turbo:
         specifier: ^2.8.10
         version: 2.8.10
@@ -120,6 +123,9 @@ importers:
       '@ai-sdk/react':
         specifier: ^3.0.99
         version: 3.0.99(react@19.2.0)(zod@4.3.6)
+      '@clickhouse/client':
+        specifier: ^1.17.0
+        version: 1.17.0
       '@dagrejs/dagre':
         specifier: ^2.0.4
         version: 2.0.4
@@ -211,6 +217,9 @@ importers:
       typescript:
         specifier: 5.9.2
         version: 5.9.2
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@opentelemetry/api@1.9.0)(@types/node@22.15.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
 
   packages/backend:
     dependencies:
@@ -369,6 +378,13 @@ packages:
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
+
+  '@clickhouse/client-common@1.17.0':
+    resolution: {integrity: sha512-MiwwgXViFAQA2YZkN4ymF1ynzG0K49KeSX9/iOcmJetWkxqSekDdpyp1GjwATWa9R215uQ+hGzJtJujeQVZZIw==}
+
+  '@clickhouse/client@1.17.0':
+    resolution: {integrity: sha512-Y3DQoamKZ/Iyosoq7Lj7lqpDkQDK4R/5mI52yJs4ZLPIO+d6/CYDqTbFBIb4No3C/AlXUYE4TKhj/kXDpe6rOA==}
+    engines: {node: '>=16'}
 
   '@dagrejs/dagre@2.0.4':
     resolution: {integrity: sha512-J6vCWTNpicHF4zFlZG1cS5DkGzMr9941gddYkakjrg3ZNev4bbqEgLHFTWiFrcJm7UCRu7olO3K6IRDd9gSGhA==}
@@ -4511,6 +4527,12 @@ snapshots:
       '@babel/helper-validator-identifier': 7.28.5
 
   '@bcoe/v8-coverage@1.0.2': {}
+
+  '@clickhouse/client-common@1.17.0': {}
+
+  '@clickhouse/client@1.17.0':
+    dependencies:
+      '@clickhouse/client-common': 1.17.0
 
   '@dagrejs/dagre@2.0.4':
     dependencies:

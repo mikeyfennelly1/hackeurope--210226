@@ -9,12 +9,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint --max-warnings 0",
-    "check-types": "next typegen && tsc --noEmit"
+    "check-types": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.46",
     "@ai-sdk/google": "^3.0.30",
     "@ai-sdk/react": "^3.0.99",
+    "@clickhouse/client": "^1.17.0",
     "@dagrejs/dagre": "^2.0.4",
     "@radix-ui/react-slot": "^1.2.4",
     "@repo/backend": "workspace:*",
@@ -46,6 +49,7 @@
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "eslint": "^9.39.1",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^4.0.18"
   }
 }

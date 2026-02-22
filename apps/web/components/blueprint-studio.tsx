@@ -20,6 +20,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   useReactFlow,
   useStore,
   useUpdateNodeInternals,
@@ -40,11 +41,13 @@ import {
   type WebhookMode,
 } from "@repo/backend/blueprints";
 import {
+  Activity,
   AlertCircle,
   ArrowRight,
   BarChart3,
   CheckCircle2,
   ChevronDown,
+  Copy,
   Ellipsis,
   GitBranch,
   Loader2,
@@ -91,6 +94,8 @@ import type { AddNodeParams, UpdateNodeParams, AddEdgeParams } from "@/lib/bluep
 import { CryptoMonitorNode } from "@/components/crypto-monitor-node";
 import { MarketNode, MARKET_OUTPUT_IDS } from "@/components/market-node";
 import { MarketPicker } from "@/components/market-picker";
+import { BacktestPanel } from "@/components/backtest-panel";
+import { SignalNode, SIGNAL_OUTPUT_IDS } from "@/components/signal-node";
 
 const MARKET_OUTPUT_HANDLES_MAP: Record<string, string> = {
   price: "Price",
@@ -107,7 +112,7 @@ import { cachedFetch, peekCache } from "@/lib/cached-fetch";
 const STORAGE_KEY = "blueprints:v1";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-type FlowNodeType = "inputNode" | "outputNode" | "decisionNode" | "marketNode" | "comparisonNode" | "logicGateNode" | "rateLimiterNode" | "webhookNode";
+type FlowNodeType = "inputNode" | "outputNode" | "decisionNode" | "marketNode" | "comparisonNode" | "logicGateNode" | "rateLimiterNode" | "webhookNode" | "signalNode";
 
 export type FlowNodeData = {
   label: string;
@@ -130,9 +135,10 @@ export type FlowNodeData = {
   /** Transient — token IDs from MarketPicker for output nodes */
   marketYesTokenId?: string;
   marketNoTokenId?: string;
-  logicGateConfig?: { gateType: "and" | "or" };
+  logicGateConfig?: { gateType: "and" | "or" | "nand" | "xor" };
   rateLimiterConfig?: { maxEvents: number; windowMs: number };
   webhookConfig?: WebhookConfig;
+  signalConfig?: { marketSlug: string; windowSeconds: number; refreshMs: number };
 };
 
 type RedprintNodeState = {
@@ -235,6 +241,7 @@ function toFlowNodeType(
   if (type === "logic_gate") return "logicGateNode";
   if (type === "rate_limiter") return "rateLimiterNode";
   if (type === "webhook") return "webhookNode";
+  if (type === "signal") return "signalNode";
   return "decisionNode";
 }
 
@@ -248,6 +255,7 @@ function toBlueprintNodeType(
   if (type === "logicGateNode") return "logic_gate";
   if (type === "rateLimiterNode") return "rate_limiter";
   if (type === "webhookNode") return "webhook";
+  if (type === "signalNode") return "signal";
   return "decision";
 }
 
@@ -274,6 +282,7 @@ function blueprintToFlow(blueprint: Blueprint): {
       logicGateConfig: node.logicGateConfig,
       rateLimiterConfig: node.rateLimiterConfig,
       webhookConfig: node.webhookConfig,
+      signalConfig: node.signalConfig,
     },
   }));
 
@@ -333,6 +342,9 @@ function flowToBlueprint(
         : {}),
       ...(node.data.webhookConfig
         ? { webhookConfig: node.data.webhookConfig }
+        : {}),
+      ...(node.data.signalConfig
+        ? { signalConfig: node.data.signalConfig }
         : {}),
     })),
     edges: edges.map((edge) => ({
@@ -1207,8 +1219,13 @@ function LogicGateNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "log
   const result = useMemo(() => {
     if (connectedSlots.length === 0) return undefined;
     const booleans = connectedSlots.map((s) => s.value !== undefined ? !!s.value : false);
-    if (gateType === "and") return booleans.every(Boolean);
-    return booleans.some(Boolean);
+    switch (gateType) {
+      case "and": return booleans.every(Boolean);
+      case "or": return booleans.some(Boolean);
+      case "nand": return !booleans.every(Boolean);
+      case "xor": return booleans.filter(Boolean).length === 1;
+      default: return booleans.every(Boolean);
+    }
   }, [connectedSlots, gateType]);
 
   // Publish result
@@ -1285,7 +1302,7 @@ function LogicGateNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "log
         minHeight={50}
         isVisible={!!selected}
         lineClassName="!border-[#d4602c]/40"
-        handleClassName="!w-2 !h-2 !bg-[#d4602c] !border-[#d4602c]"
+        handleClassName="!w-4 !h-4 !bg-transparent !border-transparent"
       />
       {/* Corner brackets */}
       <div className={`absolute h-2.5 w-2.5 border-l border-t border-[#d4602c] transition-all ${selected ? "-left-1 -top-1" : "-left-px -top-px"}`} />
@@ -2026,7 +2043,7 @@ function FloatingNodeToolbar({
           {node.type === "logicGateNode" && (
             <ToolbarField label="Gate Type">
               <div className="flex gap-1">
-                {(["and", "or"] as const).map((g) => (
+                {(["and", "or", "nand", "xor"] as const).map((g) => (
                   <button
                     key={g}
                     className={`h-6 flex-1 border text-[11px] font-bold uppercase tracking-[0.1em] transition-colors ${
@@ -2134,6 +2151,65 @@ function FloatingNodeToolbar({
               )}
             </>
           )}
+
+          {/* Signal node: market slug, window, refresh */}
+          {node.type === "signalNode" && (
+            <>
+              <ToolbarField label="Market">
+                <MarketPicker
+                  value={node.data.signalConfig?.marketSlug ?? ""}
+                  onSelect={(event) =>
+                    onUpdate({
+                      signalConfig: {
+                        marketSlug: event.slug,
+                        windowSeconds: node.data.signalConfig?.windowSeconds ?? 3600,
+                        refreshMs: node.data.signalConfig?.refreshMs ?? 60000,
+                      },
+                    })
+                  }
+                />
+              </ToolbarField>
+              <ToolbarField label="Window">
+                <select
+                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                  value={node.data.signalConfig?.windowSeconds ?? 3600}
+                  onChange={(e) =>
+                    onUpdate({
+                      signalConfig: {
+                        marketSlug: node.data.signalConfig?.marketSlug ?? "",
+                        windowSeconds: parseInt(e.target.value, 10),
+                        refreshMs: node.data.signalConfig?.refreshMs ?? 60000,
+                      },
+                    })
+                  }
+                >
+                  <option value={3600}>1 hour</option>
+                  <option value={14400}>4 hours</option>
+                  <option value={86400}>1 day</option>
+                  <option value={604800}>1 week</option>
+                </select>
+              </ToolbarField>
+              <ToolbarField label="Refresh">
+                <select
+                  className="h-6 w-56 border border-white/10 bg-[#0a0a0a] px-1.5 text-[11px] text-white/80 outline-none"
+                  value={node.data.signalConfig?.refreshMs ?? 60000}
+                  onChange={(e) =>
+                    onUpdate({
+                      signalConfig: {
+                        marketSlug: node.data.signalConfig?.marketSlug ?? "",
+                        windowSeconds: node.data.signalConfig?.windowSeconds ?? 3600,
+                        refreshMs: parseInt(e.target.value, 10),
+                      },
+                    })
+                  }
+                >
+                  <option value={30000}>30 seconds</option>
+                  <option value={60000}>1 minute</option>
+                  <option value={300000}>5 minutes</option>
+                </select>
+              </ToolbarField>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -2160,6 +2236,7 @@ const INPUT_NODE_OPTIONS: NodeOption[] = [
   { type: "inputNode", inputSubType: "crypto_price", label: "Crypto Price", icon: <TrendingUp className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
   { type: "marketNode", label: "Market", icon: <BarChart3 className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
   { type: "webhookNode", webhookMode: "incoming", label: "Webhook In", icon: <Globe className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
+  { type: "signalNode", label: "Signal", icon: <Activity className="size-3 text-[#d4602c]" />, hasTarget: false, hasSource: true },
 ];
 
 const LOGIC_NODE_OPTIONS: NodeOption[] = [
@@ -2262,6 +2339,7 @@ function CanvasContextMenu({
   menu,
   onAddNode,
   onDeleteNode,
+  onDuplicateNode,
   onClose,
 }: {
   menu: Exclude<ContextMenu, { type: "connection" }>;
@@ -2273,6 +2351,7 @@ function CanvasContextMenu({
     webhookMode?: WebhookMode,
   ) => void;
   onDeleteNode: (nodeId: string) => void;
+  onDuplicateNode: (nodeId: string) => void;
   onClose: () => void;
 }) {
   return (
@@ -2357,16 +2436,29 @@ function CanvasContextMenu({
             </DropdownMenuSub>
           </>
         ) : (
-          <DropdownMenuItem
-            className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
-            onClick={() => {
-              onDeleteNode(menu.nodeId);
-              onClose();
-            }}
-          >
-            <Trash2 className="size-3" />
-            Delete node
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuItem
+              className={DROPDOWN_ITEM_CLASS}
+              onClick={() => {
+                onDuplicateNode(menu.nodeId);
+                onClose();
+              }}
+            >
+              <Copy className="size-3" />
+              Duplicate
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="bg-white/10" />
+            <DropdownMenuItem
+              className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
+              onClick={() => {
+                onDeleteNode(menu.nodeId);
+                onClose();
+              }}
+            >
+              <Trash2 className="size-3" />
+              Delete
+            </DropdownMenuItem>
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -2387,6 +2479,7 @@ function BlueprintStudioInner() {
   const [activeRedprint, setActiveRedprint] = useState<RedprintJSON | null>(null);
   const [dispatching, setDispatching] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [backtestOpen, setBacktestOpen] = useState(false);
   const [deletingBlueprintId, setDeletingBlueprintId] = useState<string | null>(null);
   const [renamingBlueprintId, setRenamingBlueprintId] = useState<string | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -2662,8 +2755,10 @@ function BlueprintStudioInner() {
                         ? "Market"
                         : type === "webhookNode"
                           ? (isWebhookIncoming ? "Webhook In" : "Webhook Out")
-                          : "Place Order",
-        inputs: type === "inputNode" || type === "marketNode" || isWebhookIncoming
+                          : type === "signalNode"
+                            ? "Signal"
+                            : "Place Order",
+        inputs: type === "inputNode" || type === "marketNode" || type === "signalNode" || isWebhookIncoming
           ? []
           : type === "comparisonNode"
             ? ["input-a", "input-b"]
@@ -2679,6 +2774,8 @@ function BlueprintStudioInner() {
             ? ["branch-a", "branch-b"]
             : type === "marketNode"
               ? [...MARKET_OUTPUT_IDS]
+              : type === "signalNode"
+                ? [...SIGNAL_OUTPUT_IDS]
               : type === "rateLimiterNode"
                 ? ["pass", "blocked"]
                 : type === "outputNode" || type === "comparisonNode" || type === "logicGateNode" || isWebhookOutgoing
@@ -2708,6 +2805,9 @@ function BlueprintStudioInner() {
           ? { rateLimiterConfig: { maxEvents: 5, windowMs: 60000 } }
           : {}),
         ...(type === "marketNode" ? { marketSlug: "" } : {}),
+        ...(type === "signalNode"
+          ? { signalConfig: { marketSlug: "", windowSeconds: 3600, refreshMs: 60000 } }
+          : {}),
         ...(type === "webhookNode"
           ? {
               webhookConfig: {
@@ -2867,6 +2967,22 @@ function BlueprintStudioInner() {
     deleteNodeById(selectedNodeId);
   };
 
+  const duplicateNodeById = (nodeId: string) => {
+    const source = nodes.find((n) => n.id === nodeId);
+    if (!source) return;
+    const newId = `${source.type}-${Date.now()}`;
+    const clone: Node<FlowNodeData, FlowNodeType> = {
+      ...source,
+      id: newId,
+      position: { x: source.position.x + 40, y: source.position.y + 40 },
+      selected: false,
+      data: { ...source.data },
+    };
+    const nextNodes = [...nodes, clone];
+    setNodes(nextNodes);
+    persistCurrent(nextNodes, edges);
+  };
+
   const createBlueprint = () => {
     const next = [
       ...blueprints,
@@ -2874,6 +2990,24 @@ function BlueprintStudioInner() {
     ];
     setBlueprints(next);
     setSelectedBlueprintId(next[next.length - 1]?.id ?? "");
+    saveBlueprints(next);
+  };
+
+  const duplicateBlueprint = (id: string) => {
+    const source = blueprints.find((b) => b.id === id);
+    if (!source) return;
+    const dup = new BlueprintBuilder(`${source.name} (copy)`)
+      .build();
+    // Overwrite with source data, keeping new id
+    const dupId = dup.id;
+    const copy: Blueprint = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: dupId,
+      name: `${source.name} (copy)`,
+    };
+    const next = [...blueprints, copy];
+    setBlueprints(next);
+    setSelectedBlueprintId(dupId);
     saveBlueprints(next);
   };
 
@@ -2928,7 +3062,9 @@ function BlueprintStudioInner() {
                     ? "rateLimiterNode"
                     : t === "webhook"
                       ? "webhookNode"
-                      : "outputNode";
+                      : t === "signal"
+                        ? "signalNode"
+                        : "outputNode";
 
       const inputType = "inputType" in params ? (params.inputType as string) : undefined;
       const isCrypto =
@@ -2956,7 +3092,7 @@ function BlueprintStudioInner() {
             ? { comparisonConfig: params.comparisonConfig as { operator: ComparisonOperator } }
             : {}),
           ...("logicGateConfig" in params && params.logicGateConfig
-            ? { logicGateConfig: params.logicGateConfig as { gateType: "and" | "or" } }
+            ? { logicGateConfig: params.logicGateConfig as { gateType: "and" | "or" | "nand" | "xor" } }
             : {}),
           ...("webhookConfig" in params && params.webhookConfig
             ? { webhookConfig: params.webhookConfig as WebhookConfig }
@@ -2975,6 +3111,9 @@ function BlueprintStudioInner() {
             : {}),
           ...("amountType" in params && params.amountType
             ? { amountType: params.amountType as "dollars" | "shares" }
+            : {}),
+          ...("signalConfig" in params && params.signalConfig
+            ? { signalConfig: params.signalConfig as { marketSlug: string; windowSeconds: number; refreshMs: number } }
             : {}),
         },
       };
@@ -3030,6 +3169,9 @@ function BlueprintStudioInner() {
             : {}),
           ...(params.amountType !== undefined
             ? { amountType: params.amountType }
+            : {}),
+          ...("signalConfig" in params && params.signalConfig !== undefined
+            ? { signalConfig: params.signalConfig }
             : {}),
         },
       };
@@ -3138,6 +3280,7 @@ function BlueprintStudioInner() {
       logicGateNode: LogicGateNode,
       rateLimiterNode: RateLimiterNode,
       webhookNode: WebhookNode,
+      signalNode: SignalNode,
       phantom: PhantomNode,
     }),
     [],
@@ -3184,7 +3327,7 @@ function BlueprintStudioInner() {
   }, [contextMenu]);
 
   return (
-    <div className="relative flex min-h-screen bg-[#0a0a0a] text-[#e0e0e0]">
+    <div className="relative flex h-screen overflow-hidden bg-[#0a0a0a] text-[#e0e0e0]">
       <aside className="relative z-10 flex w-[260px] flex-col border-r border-white/10 bg-[#0a0a0a]">
         {/* Header */}
         <div className="flex items-center justify-between px-4 pb-2 pt-4">
@@ -3252,6 +3395,13 @@ function BlueprintStudioInner() {
                         <Pencil className="size-3 text-[#d4602c]" />
                         Rename
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className={DROPDOWN_ITEM_CLASS}
+                        onClick={() => duplicateBlueprint(blueprint.id)}
+                      >
+                        <Copy className="size-3 text-[#d4602c]" />
+                        Duplicate
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator className="bg-white/10" />
                       <DropdownMenuItem
                         className={DROPDOWN_ITEM_DESTRUCTIVE_CLASS}
@@ -3267,7 +3417,7 @@ function BlueprintStudioInner() {
           })}
         </div>
 
-        {/* Fix Layout & AI Chat */}
+        {/* Fix Layout, Backtest & AI Chat */}
         <div className="mt-auto border-t border-white/10 px-3 py-3 flex flex-col gap-2">
           <Button
             className="w-full"
@@ -3285,6 +3435,16 @@ function BlueprintStudioInner() {
           >
             <LayoutGrid className="size-4" />
             Fix Layout
+          </Button>
+          <Button
+            className="w-full"
+            size="sm"
+            variant={backtestOpen ? "default" : "outline"}
+            onClick={() => setBacktestOpen((prev) => !prev)}
+            disabled={!selectedBlueprint}
+          >
+            <BarChart3 className="size-4" />
+            {backtestOpen ? "Close Backtest" : "Backtest"}
           </Button>
           <Button
             className="w-full"
@@ -3320,7 +3480,8 @@ function BlueprintStudioInner() {
             }}
             onNodeDragStop={(_event, node) => {
               setTimeout(() => {
-                if (!wasSelectedBeforeDragRef.current) {
+                const multiSelected = nodes.filter((n) => n.selected).length > 1;
+                if (!wasSelectedBeforeDragRef.current && !multiSelected) {
                   setSelectedNodeId(null);
                   // Clear React Flow's internal selected state on the dragged node
                   setNodes((nds) =>
@@ -3388,6 +3549,9 @@ function BlueprintStudioInner() {
                 cur?.type === "connection" ? cur : null,
               );
             }}
+            selectionOnDrag
+            selectionMode={SelectionMode.Partial}
+            panOnDrag={[1, 2]}
             panOnScroll
             zoomOnScroll={false}
             zoomOnDoubleClick={false}
@@ -3486,6 +3650,7 @@ function BlueprintStudioInner() {
               menu={contextMenu}
               onAddNode={addNodeByType}
               onDeleteNode={deleteNodeById}
+              onDuplicateNode={duplicateNodeById}
               onClose={() => setContextMenu(null)}
             />
           ) : null}
@@ -3576,6 +3741,13 @@ function BlueprintStudioInner() {
             Teardown
           </Button>
         </aside>
+      )}
+
+      {backtestOpen && selectedBlueprint && (
+        <BacktestPanel
+          blueprint={selectedBlueprint}
+          onClose={() => setBacktestOpen(false)}
+        />
       )}
 
       <BlueprintChat

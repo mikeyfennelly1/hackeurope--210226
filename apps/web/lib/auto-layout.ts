@@ -19,6 +19,7 @@ const NODE_DIMENSIONS: Record<string, { width: number; height: number }> = {
   decisionNode: { width: 240, height: 200 },
   webhookNode: { width: 220, height: 120 },
   logicGateNode: { width: 140, height: 100 },
+  signalNode: { width: 260, height: 200 },
 };
 
 const DEFAULT_DIMENSIONS = { width: 220, height: 120 };

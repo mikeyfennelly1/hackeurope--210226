@@ -80,6 +80,9 @@ function toolParamsToBlueprint(params: BlueprintToolParams): Blueprint {
       ...("amountType" in node && node.amountType
         ? { amountType: node.amountType }
         : {}),
+      ...("signalConfig" in node && node.signalConfig
+        ? { signalConfig: node.signalConfig }
+        : {}),
     });
   }
 
@@ -123,6 +126,10 @@ function blueprintToContext(bp: Blueprint): string {
     }
     if ("logicGateConfig" in n && n.logicGateConfig) {
       parts.push(`logicGateConfig={gateType:"${(n.logicGateConfig as { gateType: string }).gateType}"}`);
+    }
+    if ("signalConfig" in n && n.signalConfig) {
+      const sc = n.signalConfig as { marketSlug: string; windowSeconds: number; refreshMs: number };
+      parts.push(`signalConfig={marketSlug:"${sc.marketSlug}", windowSeconds:${sc.windowSeconds}, refreshMs:${sc.refreshMs}}`);
     }
     if (n.marketOutcome) {
       parts.push(`marketOutcome="${n.marketOutcome}"`);

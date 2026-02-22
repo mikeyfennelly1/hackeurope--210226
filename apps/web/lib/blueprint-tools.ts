@@ -20,6 +20,7 @@ const nodeSchema = z.object({
       "logic_gate",
       "market",
       "rate_limiter",
+      "signal",
     ])
     .describe("Node type"),
   id: z.string().describe("Unique node id, e.g. 'input-1'"),
@@ -104,6 +105,15 @@ const nodeSchema = z.object({
     })
     .optional()
     .describe("Required for rate_limiter nodes"),
+  // ── signal node fields ──
+  signalConfig: z
+    .object({
+      marketSlug: z.string().describe("Polymarket event slug to compute signals from"),
+      windowSeconds: z.number().describe("Lookback window in seconds (3600=1h, 14400=4h, 86400=1d, 604800=1w)"),
+      refreshMs: z.number().describe("Refresh interval in milliseconds (30000=30s, 60000=1m, 300000=5m)"),
+    })
+    .optional()
+    .describe("Required for signal nodes"),
 });
 
 const edgeSchema = z.object({
@@ -178,7 +188,7 @@ const updateNodeSchema = z.object({
     .describe("Updated webhook configuration"),
   logicGateConfig: z
     .object({
-      gateType: z.enum(["and", "or"]),
+      gateType: z.enum(["and", "or", "nand", "xor"]),
     })
     .optional()
     .describe("Updated logic gate config (gate type)"),
@@ -205,6 +215,14 @@ const updateNodeSchema = z.object({
     .enum(["dollars", "shares"])
     .optional()
     .describe("Updated amount type for output nodes"),
+  signalConfig: z
+    .object({
+      marketSlug: z.string(),
+      windowSeconds: z.number(),
+      refreshMs: z.number(),
+    })
+    .optional()
+    .describe("Updated signal config (market slug, window, refresh interval)"),
 });
 
 export type UpdateNodeParams = z.infer<typeof updateNodeSchema>;

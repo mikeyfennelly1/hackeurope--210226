@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Handle, Position, useReactFlow, type NodeProps, type Node } from "@xyflow/react";
+import { ChevronDown } from "lucide-react";
 import type { FlowNodeData } from "./blueprint-studio";
 import { usePulse } from "./pulse-context";
 import { cachedFetch, peekCache } from "../lib/cached-fetch";
@@ -42,9 +43,17 @@ const MARKET_OUTPUT_HANDLES = [
   { id: "liquidity", label: "LIQUIDITY" },
   { id: "spread", label: "SPREAD" },
   { id: "lastTrade", label: "LAST TRADE" },
+  { id: "imbalance", label: "BOOK IMBAL" },
 ] as const;
 
 export const MARKET_OUTPUT_IDS = MARKET_OUTPUT_HANDLES.map((h) => h.id);
+
+type OrderBookLevel = { price: string; size: string };
+type OrderBookData = {
+  bids: OrderBookLevel[];
+  asks: OrderBookLevel[];
+};
+
 
 type PricePoint = { t: number; p: number };
 
@@ -261,7 +270,7 @@ function getNormalizedTokenIds(rawMarket: GammaMarket): [string, string] {
 }
 
 export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, "marketNode">>) {
-  const { pulseNode, setNodeValue } = usePulse();
+  const { pulseNode, setNodeValue, nodeValues } = usePulse();
   const { setNodes } = useReactFlow();
   const [fetchState, setFetchState] = useState<FetchState>({ status: "idle" });
   const [marketInterval, setMarketInterval] = useState<MarketInterval>("all");
@@ -269,6 +278,11 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
   const [wsConnected, setWsConnected] = useState(false);
   const [livePrices, setLivePrices] = useState<Record<string, { price: number; bestBid?: number; bestAsk?: number }>>({});
   const [liveHistory, setLiveHistory] = useState<PricePoint[]>([]);
+  const [orderBook, setOrderBook] = useState<OrderBookData | null>(null);
+  const [bookOpen, setBookOpen] = useState(false);
+  const bookScrollRef = useRef<HTMLDivElement>(null);
+  const bookSpreadRef = useRef<HTMLDivElement>(null);
+  const bookRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tokenIdsRef = useRef<string[]>([]);
   const marketIntervalRef = useRef<MarketInterval>(marketInterval);
@@ -448,6 +462,53 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchState.status, marketIndex]);
 
+  // Fetch order book when loaded + refetch on WS updates (throttled)
+  const fetchOrderBook = useCallback(async () => {
+    const yesToken = tokenIdsRef.current[0];
+    if (!yesToken) return;
+    try {
+      const data = await fetch(`/api/polymarket?book=${encodeURIComponent(yesToken)}`);
+      if (!data.ok) return;
+      const book = await data.json() as OrderBookData;
+      setOrderBook(book);
+    } catch {
+      // non-critical
+    }
+  }, []);
+
+  // Initial fetch when market loads
+  useEffect(() => {
+    if (fetchState.status !== "loaded") return;
+    fetchOrderBook();
+  }, [fetchState.status, marketIndex, fetchOrderBook]);
+
+  // Throttled refetch on WS updates (every 5s max)
+  useEffect(() => {
+    if (!wsConnected || !bookOpen) return;
+    if (bookRefetchTimerRef.current) return;
+    bookRefetchTimerRef.current = setTimeout(() => {
+      bookRefetchTimerRef.current = null;
+      fetchOrderBook();
+    }, 5000);
+  }, [livePrices, wsConnected, bookOpen, fetchOrderBook]);
+
+  useEffect(() => () => {
+    if (bookRefetchTimerRef.current) clearTimeout(bookRefetchTimerRef.current);
+  }, []);
+
+  // Center on spread when book opens or data arrives
+  useEffect(() => {
+    if (!bookOpen) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const spread = bookSpreadRef.current;
+      const container = bookScrollRef.current;
+      if (!spread || !container) return;
+      // offsetTop is relative to the container (its offsetParent via position:relative)
+      container.scrollTop = spread.offsetTop - container.offsetHeight / 2 + spread.offsetHeight / 2;
+    }));
+  }, [bookOpen, orderBook]);
+
+
   const allMarkets = fetchState.status === "loaded"
     ? fetchState.event.markets.filter((m) => m.active && !m.closed)
     : [];
@@ -518,6 +579,54 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
     setNodeValue(`${id}:spread`, (liveBestAsk ?? market.bestAsk) - (liveBestBid ?? market.bestBid));
     setNodeValue(`${id}:lastTrade`, yesPrice || market.lastTradePrice);
   }, [selectedPrice, fetchState.status, id, setNodeValue, market, liveBestAsk, liveBestBid, yesPrice]);
+
+  // Publish book imbalance — top 10 levels near spread
+  useEffect(() => {
+    if (!orderBook) return;
+    const NEAR_LEVELS = 10;
+    const bids = orderBook.bids
+      .map((l) => ({ price: parseFloat(l.price), size: parseFloat(l.size) }))
+      .sort((a, b) => b.price - a.price)
+      .slice(0, NEAR_LEVELS);
+    const asks = orderBook.asks
+      .map((l) => ({ price: parseFloat(l.price), size: parseFloat(l.size) }))
+      .sort((a, b) => a.price - b.price)
+      .slice(0, NEAR_LEVELS);
+    const bidDepth = bids.reduce((s, l) => s + l.size, 0);
+    const askDepth = asks.reduce((s, l) => s + l.size, 0);
+    const total = bidDepth + askDepth;
+    const imbalance = total > 0 ? bidDepth / total : 0.5;
+    setNodeValue(`${id}:imbalance`, imbalance);
+  }, [orderBook, id, setNodeValue]);
+
+  const bookLevels = useMemo(() => {
+    if (!orderBook) return null;
+
+    function parse(levels: OrderBookLevel[]) {
+      return levels.map((l) => ({
+        price: parseFloat(l.price),
+        size: parseFloat(l.size),
+      }));
+    }
+
+    // Bids: highest first (closest to spread)
+    const bids = parse(orderBook.bids)
+      .sort((a, b) => b.price - a.price);
+
+    // Asks: lowest first (closest to spread)
+    const asks = parse(orderBook.asks)
+      .sort((a, b) => a.price - b.price);
+
+    // Cumulative depth from spread outward
+    // Bids are already highest-first, asks lowest-first (both starting at spread)
+    let cumBids = 0;
+    const bidDepths = bids.map((l) => { cumBids += l.size; return cumBids; });
+    let cumAsks = 0;
+    const askDepths = asks.map((l) => { cumAsks += l.size; return cumAsks; });
+
+    const maxDepth = Math.max(cumBids, cumAsks, 1);
+    return { bids, asks, bidDepths, askDepths, maxDepth };
+  }, [orderBook]);
 
   return (
     <div className="relative w-[340px] border border-white/20 bg-[#111314] font-[family-name:var(--font-geist-mono)] shadow-[0_12px_40px_rgba(0,0,0,0.6)]">
@@ -694,6 +803,87 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
             )}
           </div>
 
+          {/* Order book — collapsible */}
+          <div className="border-b border-white/10">
+            <button
+              className="nodrag flex w-full items-center justify-between px-3 py-1.5 text-[8px] uppercase tracking-[0.25em] text-white/25 transition-colors hover:text-white/40"
+              onClick={() => setBookOpen((o) => !o)}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <span>ORDER BOOK</span>
+              <ChevronDown
+                className={`size-3 transition-transform ${bookOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {bookOpen && (
+              <div className="nodrag px-3 pb-2.5">
+                {!bookLevels ? (
+                  <div className="flex h-12 items-center justify-center">
+                    <span className="text-[8px] uppercase tracking-[0.25em] text-white/15">
+                      LOADING
+                    </span>
+                  </div>
+                ) : (
+                  <div ref={bookScrollRef} className="nowheel relative max-h-[200px] overflow-y-auto overflow-x-hidden">
+                    {/* Asks — reversed so highest ask at top, lowest ask nearest spread */}
+                    <div className="space-y-px">
+                      {[...bookLevels.asks].reverse().map((level, i, arr) => {
+                        const depthIdx = arr.length - 1 - i;
+                        return (
+                          <div key={`a-${i}`} className="flex items-center gap-2 py-[2px]">
+                            <span className="w-10 shrink-0 text-[9px] tabular-nums text-red-400/70">
+                              {(level.price * 100).toFixed(1)}¢
+                            </span>
+                            <span className="w-14 shrink-0 text-right text-[9px] tabular-nums text-white/30">
+                              {level.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </span>
+                            <div className="relative h-3 min-w-0 flex-1 overflow-hidden">
+                              <div
+                                className="absolute inset-y-0 left-0 rounded-r-sm bg-red-500/15"
+                                style={{ width: `${(bookLevels.askDepths[depthIdx]! / bookLevels.maxDepth) * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Spread divider */}
+                    <div ref={bookSpreadRef} className="flex items-center gap-2 py-1">
+                      <div className="h-px flex-1 bg-white/[0.06]" />
+                      <span className="text-[8px] font-bold tracking-[0.2em] text-white/25">
+                        {bookLevels.asks[0] && bookLevels.bids[0]
+                          ? `${((bookLevels.asks[0].price - bookLevels.bids[0].price) * 100).toFixed(1)}¢ SPREAD`
+                          : "—"}
+                      </span>
+                      <div className="h-px flex-1 bg-white/[0.06]" />
+                    </div>
+
+                    {/* Bids — highest bid nearest spread, lowest at bottom */}
+                    <div className="space-y-px">
+                      {bookLevels.bids.map((level, i) => (
+                        <div key={`b-${i}`} className="flex items-center gap-2 py-[2px]">
+                          <span className="w-10 shrink-0 text-[9px] tabular-nums text-emerald-400/70">
+                            {(level.price * 100).toFixed(1)}¢
+                          </span>
+                          <span className="w-14 shrink-0 text-right text-[9px] tabular-nums text-white/30">
+                            {level.size.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </span>
+                          <div className="relative h-3 min-w-0 flex-1 overflow-hidden">
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-r-sm bg-emerald-500/15"
+                              style={{ width: `${(bookLevels.bidDepths[i]! / bookLevels.maxDepth) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
         </div>
       )}
 
@@ -720,6 +910,11 @@ export function MarketNode({ id, data, selected }: NodeProps<Node<FlowNodeData, 
               case "lastTrade":
                 value = `${Math.round((yesPrice || market.lastTradePrice) * 100)}\u00a2`;
                 break;
+              case "imbalance": {
+                const imb = nodeValues[`${id}:imbalance`];
+                if (imb != null) value = `${(imb * 100).toFixed(1)}%`;
+                break;
+              }
             }
           }
           return (

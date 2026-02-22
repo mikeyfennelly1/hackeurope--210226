@@ -2,7 +2,7 @@ import type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, 
 export type { ComparisonOperator, CryptoConditionOperator, CryptoMonitorConfig, Decision, InputNodeType, WebhookConfig, WebhookMode } from "./definition/types";
 export { toDefinition } from "./convert";
 
-export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison" | "logic_gate" | "rate_limiter" | "webhook";
+export type BlueprintNodeType = "input" | "output" | "decision" | "market" | "comparison" | "logic_gate" | "rate_limiter" | "webhook" | "signal";
 
 export type ComparisonConfig = {
   operator: ComparisonOperator;
@@ -30,9 +30,10 @@ export type BlueprintNode = {
   marketSlug?: string;
   marketOutcome?: MarketOutcome;
   marketIndex?: number;
-  logicGateConfig?: { gateType: "and" | "or" };
+  logicGateConfig?: { gateType: "and" | "or" | "nand" | "xor" };
   rateLimiterConfig?: { maxEvents: number; windowMs: number };
   webhookConfig?: WebhookConfig;
+  signalConfig?: { marketSlug: string; windowSeconds: number; refreshMs: number };
 };
 
 export type BlueprintEdge = {
