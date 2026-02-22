@@ -44,7 +44,9 @@ export function toDefinition(blueprint: Blueprint): BlueprintDefinition {
       name: node.id,
       label: node.label,
       role,
-      ...(subscribesTo && subscribesTo.length > 0 ? { subscribesTo } : {}),
+      ...(subscribesTo && subscribesTo.length > 0
+        ? { subscribesTo: subscribesTo.map((node) => ({ node, requiredValue: true })) }
+        : {}),
       ...(node.action ? { action: node.action } : {}),
       ...(node.inputType ? { inputType: node.inputType } : {}),
       ...(node.cryptoMonitorConfig

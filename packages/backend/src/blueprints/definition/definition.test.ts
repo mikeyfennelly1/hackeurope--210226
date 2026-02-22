@@ -8,12 +8,12 @@ describe("definition blueprint", () => {
       .addNode({
         name: "sink",
         role: "consumer",
-        subscribesTo: ["source"],
+        subscribesTo: [{ node: "source", requiredValue: true }],
       })
       .addNode({
         name: "decision",
         role: "decision",
-        subscribesTo: ["source"],
+        subscribesTo: [{ node: "source", requiredValue: true }],
         action: { verb: "buy", market_id: "TEST-MARKET" },
       })
       .build();
@@ -32,7 +32,7 @@ describe("definition blueprint", () => {
         {
           name: "decision",
           role: "decision",
-          subscribesTo: ["missing-node"],
+          subscribesTo: [{ node: "missing-node", requiredValue: true }],
           action: { verb: "sell", market_id: "TEST-MARKET" },
         },
       ],
@@ -50,12 +50,12 @@ describe("definition blueprint", () => {
       name: "trade-graph",
       nodes: [
         { name: "source", role: "producer" },
-        { name: "compute", role: "hybrid", subscribesTo: ["source"] },
-        { name: "sink", role: "consumer", subscribesTo: ["compute"] },
+        { name: "compute", role: "hybrid", subscribesTo: [{ node: "source", requiredValue: true }] },
+        { name: "sink", role: "consumer", subscribesTo: [{ node: "compute", requiredValue: true }] },
         {
           name: "decision",
           role: "decision",
-          subscribesTo: ["compute"],
+          subscribesTo: [{ node: "compute", requiredValue: true }],
           action: { verb: "buy", market_id: "TEST-MARKET" },
         },
       ],

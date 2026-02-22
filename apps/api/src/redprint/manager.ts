@@ -62,7 +62,8 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
     if (!nodeDef.subscribesTo || nodeDef.subscribesTo.length === 0) continue;
 
     // Subscribe to each upstream subject
-    for (const upstream of nodeDef.subscribesTo) {
+    for (const upstreamDep of nodeDef.subscribesTo) {
+      const upstream = upstreamDep.node;
       // Subject is scoped to this redprint instance: <redprint_id>.<node_name>
       const subject = toNatsSubject(id, upstream);
       const sub = nc.subscribe(subject);
@@ -84,7 +85,7 @@ export function dispatch(blueprint: BlueprintDefinition): Redprint {
 
           // Check if ALL upstream deps of this node have fired
           const allFired = nodeDef.subscribesTo!.every((dep) => {
-            const depState = redprint.nodes.get(dep);
+            const depState = redprint.nodes.get(dep.node);
             return depState?.status === "fired";
           });
 

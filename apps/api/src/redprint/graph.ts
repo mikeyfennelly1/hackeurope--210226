@@ -18,7 +18,7 @@ export function topologicalSort(
 
   for (const node of nodes) {
     for (const dep of node.subscribesTo ?? []) {
-      adj.get(dep)!.push(node.name);
+      adj.get(dep.node)!.push(node.name);
       inDegree.set(node.name, (inDegree.get(node.name) ?? 0) + 1);
     }
   }

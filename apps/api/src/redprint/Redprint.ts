@@ -38,21 +38,26 @@ export class RedPrint {
       ]),
     );
 
-    const producerNodes = blueprint.nodes.filter((n) => n.role === "producer");
-    this.decisionBuffer = new DecisionBuffer(producerNodes.map((n) => n.name));
-
-    const requiredState = new Map(producerNodes.map((n) => [n.name, true] as const));
     const decisionNode = blueprint.nodes.find((n) => n.role === "decision");
     if (!decisionNode?.action) {
       throw new Error(`Blueprint "${blueprint.name}" has no decision node with an action`);
     }
+
+    const producerNodes = blueprint.nodes.filter((n) => n.role === "producer");
+    this.decisionBuffer = new DecisionBuffer(producerNodes.map((n) => n.name));
+
+    const requiredState = new Map(
+      (decisionNode.subscribesTo ?? []).map((dep) => [dep.node, dep.requiredValue] as const),
+    );
     this.decider = new Decider(requiredState, decisionNode.action);
   }
 
   writeToKey(keyName: string, value: boolean): void {
+    console.log(`[RedPrint ${this.id}] node "${keyName}" fired with output=${value}`);
     this.decisionBuffer.write(keyName, value);
 
     if (this.decisionBuffer.isDecideable()) {
+      console.log(`[RedPrint ${this.id}] all producers have fired — evaluating decision`);
       this.decideAndTakeAction();
     }
   }
@@ -64,6 +69,9 @@ export class RedPrint {
     if (shouldAct) {
       this.decider.executeAction();
       this.status = "completed";
+      console.log(`[RedPrint ${this.id}] status → completed`);
+    } else {
+      console.log(`[RedPrint ${this.id}] rule chain returned false — no action taken`);
     }
   }
 }

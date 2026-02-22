@@ -11,7 +11,10 @@ export class Decider {
 
   executeRuleChain(actualState: Record<string, boolean>): boolean {
     for (const [key, requiredValue] of this.requiredState) {
+      // return false if the key isn't even in the actual state
       if (!(key in actualState)) return false;
+
+      // if the value exist, but isn't the required value, return false
       if (actualState[key] !== requiredValue) return false;
     }
     return true;
